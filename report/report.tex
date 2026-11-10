@@ -1,0 +1,327 @@
+% Advaitic robot learning assignment report (Overleaf-ready, pdfLaTeX).
+% Sections marked \todo{} must be completed by the author before submission.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black]{hyperref}
+
+\newcommand{\todo}[1]{\noindent\textcolor{red!70!black}{\textbf{[TODO:} #1\textbf{]}}}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,columns=fullflexible,
+  frame=single,framerule=0.3pt,rulecolor=\color{gray!60},backgroundcolor=\color{gray!5}}
+
+\title{Plate Transfer with a Unitree G1:\\An ACT Imitation-Learning Baseline}
+\author{\todo{Your name}}
+\date{\todo{Date} \quad Commit: \texttt{\todo{SHA}}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We train an Action Chunking with Transformers (ACT) policy on the 60 BiGym2
+\texttt{move\_plate} human demonstrations to move a plate between two racks
+with a Unitree G1 and Dex1-1 grippers, using only the three onboard cameras
+and proprioception. On the public Advaitic seed block the baseline scores
+27/30 (90\%, balanced across the six source slots), exactly at the pass
+threshold. On a private validation block the same checkpoint scores 24/30
+(80\%), so we estimate its true success rate at about 85\% (51/60 pooled,
+95\% CI 74--92\%) and do not treat the public pass as conclusive. All
+failures are timeouts; no episode ended in a fall.
+\todo{Add one sentence on your improvement and its measured effect.}
+\end{abstract}
+
+%------------------------------------------------------------------------------
+\section{Task and Interface}
+
+The robot must move a plate from any of six source slots in rack~1 into any
+slot of rack~2. Each rack varies by up to $\pm5$\,cm in $x/y$. Success requires the plate to be correctly
+oriented, near a destination slot, touching rack~2, released by both
+grippers and not supported by the table, held for one simulated second.
+Falls, floor contact and the 1700-step (34\,s) budget end an episode as a
+failure. Locomotion is provided by BiGym2's frozen Balance/Walk controller.
+
+\paragraph{Observations.} \texttt{obs["rgb"]}: three $84\times84$ RGB
+cameras (head, right wrist, left wrist); \texttt{obs["state"]}: 50-D
+proprioception (arm and finger joints, pelvis pose and velocities, gripper
+states). No simulator state, seed, slot or reward reaches the policy.
+
+\paragraph{Actions.} 20-D, normalised to $[-1,1]$ with the public limits in
+\texttt{action\_layout.json}: base forward/lateral velocity, pelvis height,
+yaw rate, 14 arm joint targets and 2 gripper commands. The policy may return
+a chunk of up to 50 actions per call.
+
+%------------------------------------------------------------------------------
+\section{Data}
+
+BiGym2 provides 60 successful human teleoperation demonstrations
+(37{,}645 control steps at 50\,Hz; 10.6--14.9\,s per episode). All 60 follow
+the same strategy:
+\begin{enumerate}
+  \item reach the plate with the \emph{left} arm and close the left gripper
+        (median step 230);
+  \item lift the plate out of rack~1;
+  \item side-step right by about 0.38\,m (range 0.30--0.41\,m) using base lateral
+        velocity; pelvis height stays at 0.74\,m and yaw is not commanded;
+  \item align and lower the plate into rack~2, then open the gripper
+        (median step 569) and hold.
+\end{enumerate}
+The right gripper never closes. Source-slot coverage is uneven
+(slots 1--6: 11, 6, 15, 8, 8, 12 demos). Demonstration seeds (18--147) are
+disjoint from the public evaluation block (7{,}310{,}000+).
+
+\paragraph{Two data-handling details.}
+(i)~BiGym stores in row $t$ the observation \emph{and the action that
+produced it}; row~0 is the reset row. We therefore pair observation $o_t$
+with action row $t{+}1$.
+(ii)~For base velocity (dims 0--1), the stored normalised \texttt{action}
+field does not match the \texttt{action\_layout.json} normalisation of
+\texttt{raw\_outer\_action} (differences up to 0.75). Dims 2--19 match. We
+train on \texttt{raw\_outer\_action} in physical units and apply the
+evaluator's normalisation at inference, so training and execution use the
+same convention.
+
+%------------------------------------------------------------------------------
+\section{Method: ACT Baseline}
+
+We re-implement ACT~\cite{zhao2023act} compactly in PyTorch (28.2M
+parameters).
+
+\paragraph{Encoder.} Each camera passes through an ImageNet-pretrained
+ResNet-18 with frozen batch-norm, giving a $3\times3\times512$ feature map,
+projected to $d=256$. This yields 27 image tokens with learned positional
+and per-camera embeddings. A 4-layer transformer encoder processes these
+together with a proprioception token and a latent token.
+
+\paragraph{Decoder.} A 4-layer transformer decoder with 50 learned queries
+outputs a 50-step (1\,s) chunk of raw actions, normalised by dataset mean
+and standard deviation.
+
+\paragraph{CVAE.} During training, a 4-layer transformer encodes the
+ground-truth chunk and state into a 32-D latent $z$. The loss is
+\begin{equation}
+  \mathcal{L} = \lVert \hat a_{t:t+50} - a_{t:t+50}\rVert_1
+  + \beta\, D_{\mathrm{KL}}\!\left(q(z\mid a, s)\,\Vert\,\mathcal{N}(0,I)\right),
+  \qquad \beta = 10 .
+\end{equation}
+At inference $z=0$.
+
+\paragraph{Training.} Batch 32, AdamW (lr $10^{-4}$, backbone $10^{-5}$,
+weight decay $10^{-4}$), 1k-step warm-up then cosine decay, bf16 autocast,
+gradient clipping at 10, and DrQ-style random-shift image augmentation
+($\pm4$\,px). Chunks that run past an episode end repeat the final action,
+which teaches the policy to hold still after release. We trained 200k steps
+in 5.25\,h on one RTX~3050 Laptop GPU (4\,GB; 1.1\,GB used; 10.6
+steps/s). Figure~\ref{fig:loss} shows the training loss.
+
+\paragraph{Inference.} Two execution modes:
+\emph{temporal ensembling}~\cite{zhao2023act}, which queries every step and
+averages all overlapping predictions for the current step with weights
+$w_i=e^{-0.01 i}$; and \emph{chunked}, which executes the first 10 actions of
+each prediction. Inference takes about 4.5\,ms per step on the GPU (ensemble mode).
+The policy runs in a separate Python environment through the evaluator's
+\texttt{--policy-python} process boundary.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[width=0.75\linewidth,height=5cm,xlabel={training step ($\times10^3$)},
+  ylabel={L1 loss (normalised actions)},ymin=0,
+  yticklabel style={/pgf/number format/fixed,/pgf/number format/precision=2},
+  scaled y ticks=false,grid=major,grid style={gray!20}]
+\addplot[thick,blue!70!black] coordinates {
+(5,0.0860) (10,0.0612) (15,0.0531) (20,0.0455) (25,0.0414) (30,0.0368) (35,0.0343)
+(40,0.0329) (45,0.0316) (50,0.0312) (55,0.0288) (60,0.0278) (65,0.0259) (70,0.0249)
+(75,0.0241) (80,0.0234) (85,0.0232) (90,0.0231) (95,0.0218) (100,0.0198) (105,0.0211)
+(110,0.0201) (115,0.0200) (120,0.0189) (125,0.0183) (130,0.0184) (135,0.0180)
+(140,0.0178) (145,0.0177) (150,0.0168) (155,0.0164) (160,0.0164) (165,0.0162)
+(170,0.0163) (175,0.0162) (180,0.0156) (185,0.0163) (190,0.0165) (195,0.0159)
+(200,0.0158)};
+\end{axis}
+\end{tikzpicture}
+\caption{Training L1 loss (running mean). The KL term collapsed to
+$\approx10^{-7}$ early in training (see Section~\ref{sec:discussion}).}
+\label{fig:loss}
+\end{figure}
+
+%------------------------------------------------------------------------------
+\section{Experiments}
+
+\paragraph{Protocol.} Every run uses the unmodified evaluator: 30 episodes,
+five per source slot. To avoid tuning on the public seeds, we compared
+checkpoints and execution modes on a private validation block starting at
+seed 6{,}000{,}000. We ran the public block (7{,}310{,}000+) once, on the
+final configuration. All reports are complete, integrity-valid and
+slot-balanced. Intervals are Wilson 95\% confidence intervals.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llccc}
+\toprule
+Checkpoint & Execution & Seeds & Success & 95\% CI \\
+\midrule
+100k steps & ensemble & validation & 25/30 (83\%) & 66--93\% \\
+200k steps & ensemble & validation & 24/30 (80\%) & 63--90\% \\
+200k steps & chunk (10) & validation & 21/30 (70\%) & 52--83\% \\
+\midrule
+200k steps & ensemble & \textbf{public} & \textbf{27/30 (90\%)} & 74--97\% \\
+\bottomrule
+\end{tabular}
+\caption{Baseline results. Every failure is a timeout; there were no falls and no policy errors.}
+\label{tab:results}
+\end{table}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccccc}
+\toprule
+Run & Slot 1 & Slot 2 & Slot 3 & Slot 4 & Slot 5 & Slot 6 \\
+\midrule
+100k, ensemble (val) & 4/5 & 5/5 & 3/5 & 5/5 & 4/5 & 4/5 \\
+200k, ensemble (val) & 3/5 & 5/5 & 3/5 & 4/5 & 5/5 & 4/5 \\
+200k, chunk 10 (val) & 4/5 & 3/5 & 3/5 & 4/5 & 5/5 & 2/5 \\
+200k, ensemble (public) & 4/5 & 5/5 & 4/5 & 4/5 & 5/5 & 5/5 \\
+\bottomrule
+\end{tabular}
+\caption{Per-source-slot successes.}
+\label{tab:slots}
+\end{table}
+
+\paragraph{Observations.}
+\begin{itemize}
+  \item \textbf{Temporal ensembling beats chunked execution} on identical
+        seeds (24 vs.\ 21/30), and successful episodes are faster
+        (12.5\,s vs.\ 15.5\,s mean). Re-planning every step gives more frequent
+        feedback and smoother actions.
+  \item \textbf{Training past 100k steps did not help} (25 vs.\ 24/30, well
+        within noise) even though the training loss kept falling. This
+        suggests the policy is limited by data coverage, not by
+        optimisation.
+  \item \textbf{The public pass is marginal.} 27/30 is exactly the required
+        count. Pooled with validation, the final checkpoint scores 51/60
+        (85\%, CI 74--92\%).
+  \item Slot~2 has the fewest demonstrations (6), yet it is not the weakest slot. Slots 1 and 3
+        account for more of the failures.
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\section{Failure Analysis}
+\label{sec:failures}
+
+All failures ran to the 1700-step limit with the robot standing, which
+means the policy stalled rather than fell. Failing validation seeds:
+6000000, 6000001, 6000007, 6000011, 6000012, 6000020, 6000022, 6000024 (ensemble runs).
+Seeds 6000007, 6000011 and 6000012 failed with both checkpoints.
+Public-block failures: seeds 7310005, 7310023, 7310042.
+
+\todo{Watch the failing episodes and classify each one (e.g.\ missed grasp,
+plate slipped during side-step, misaligned insertion, never released,
+oscillation near the target). Give a table of counts per category and per
+slot, with frame evidence, and state which category your improvement
+targets.}
+
+%------------------------------------------------------------------------------
+\section{Improvement}
+\label{sec:improvement}
+
+\todo{Describe your substantive improvement: the hypothesis (linked to
+Section~\ref{sec:failures}), the change, and how it was trained or
+configured. Report a validation-block comparison against the baseline with
+the same seeds and an ablation, and add the final scored public run here.
+Include unsuccessful attempts in the experiment log.}
+
+%------------------------------------------------------------------------------
+\section{Discussion and Next Steps}
+\label{sec:discussion}
+
+\paragraph{Closed-loop behaviour.} The policy re-observes every step and
+selects actions from the current images and state. It is not a replayed
+trajectory: per-episode durations vary (12.2--18.6\,s in our dev-seed
+viewing sessions).
+\todo{Check whether slower episodes (e.g.\ dev seed 5000029, 18.6\,s) contain
+visible corrections, and add evidence, e.g.\ a perturbation test or annotated frames from a
+recovered episode.}
+
+\paragraph{Latent collapse.} The CVAE KL term went to $\approx 0$, so the
+policy is effectively deterministic. With 60 demonstrations from one operator using a single
+strategy, there is little multimodality to model, so this is expected and not
+obviously harmful. Lowering $\beta$ or removing the CVAE would be an
+informative ablation.
+
+\paragraph{Limitations.} 60 demonstrations; one training seed; 30-episode
+evaluations have wide confidence intervals; and success has not been tested
+beyond the simulator's $\pm5$\,cm rack variation.
+
+\paragraph{Next steps.} Simulation-generated demonstrations balanced across
+slots (MimicGen-style pose-relative trajectory adaptation, kept only if
+successful); stall detection with a retry behaviour, since every failure is
+a timeout; and larger validation runs (60--90 episodes) to make comparisons
+statistically meaningful.
+
+%------------------------------------------------------------------------------
+\section{Reproduction}
+
+\begin{lstlisting}[language=bash]
+# Evaluator environment (pinned) and demonstrations
+uv sync --locked --extra video
+uv run bigym-download --task move_plate
+uv run python -m submission.act.export_dataset --out datasets/move_plate
+
+# Separate model environment (PyTorch 2.7.1 + CUDA 12.6)
+uv venv --python 3.12 .venv-act
+uv pip install --python .venv-act/bin/python -r submission/act/requirements.txt \
+    --index-strategy unsafe-best-match
+
+# Train (~5.3 h on an RTX 3050 Laptop GPU)
+.venv-act/bin/python -m submission.act.train --data datasets/move_plate \
+    --out checkpoints/act-baseline --steps 200000 --batch 32 --save-every 25000
+
+# Evaluate (new output directory per run)
+ACT_CHECKPOINT=$PWD/checkpoints/act-baseline/last.pt ACT_MODE=ensemble \
+MUJOCO_GL=egl uv run advaitic-eval --policy submission.act.policy:make_policy \
+    --policy-python $PWD/.venv-act/bin/python --method act-baseline-ensemble \
+    --checkpoint last.pt --episodes 30 --out results/<new-dir>
+\end{lstlisting}
+The complete pipeline (training, validation and the public run) is in
+\texttt{submission/act/run\_overnight.sh}.
+\todo{State where the checkpoint can be downloaded, with its SHA-256.}
+
+%------------------------------------------------------------------------------
+\section{Attribution and AI-Tool Use}
+
+\begin{itemize}
+  \item \textbf{BiGym2}~\cite{bigym2} (pinned \texttt{d7150135}): task,
+        assets, G1 model, Dex1-1 grippers, the GR00T-WBC lower-body controller and the 60
+        demonstrations (\texttt{SWIRL-Lab/bigym-g1-native60}).
+  \item \textbf{ACT}~\cite{zhao2023act}: architecture and temporal
+        ensembling, re-implemented (no ACT code copied).
+  \item \textbf{ResNet-18} ImageNet weights from torchvision; DrQ-style
+        random-shift augmentation~\cite{kostrikov2021drq}.
+  \item \textbf{AI tools.} The initial implementation in
+        \texttt{submission/act/} and \texttt{submission/tools/} (data
+        export, model, training, policy wrapper, viewer tools and the
+        overnight pipeline) was written with Claude Code (Anthropic) at my
+        direction. \todo{State precisely what you reviewed, rewrote,
+        designed or decided yourself, and what the AI produced. Be
+        specific; this is checked in the technical deep dive.}
+\end{itemize}
+
+\begin{thebibliography}{9}
+\bibitem{zhao2023act} T.~Z.~Zhao, V.~Kumar, S.~Levine, C.~Finn.
+  \emph{Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware}.
+  RSS, 2023.
+\bibitem{bigym2} SWIRL. \emph{BiGym2}.
+  \url{https://github.com/swirl-uk/BiGym2}.
+\bibitem{kostrikov2021drq} I.~Kostrikov, D.~Yarats, R.~Fergus.
+  \emph{Image Augmentation Is All You Need: Regularizing Deep Reinforcement
+  Learning from Pixels}. ICLR, 2021.
+\end{thebibliography}
+
+\end{document}

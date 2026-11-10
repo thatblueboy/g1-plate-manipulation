@@ -10,3 +10,4 @@ checkpoints/
 datasets/
 .env
 *.mp4
+.venv-act/
