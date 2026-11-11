@@ -234,22 +234,21 @@ reactive). This changes inference only, not the trained model. We varied
 $k$ with the final checkpoint on the same 60 validation seeds
 (6{,}000{,}000--6{,}000{,}059) as the baseline, and repeated the baseline
 setting $k=0.01$ as a control. ``Gained/lost'' counts seeds that a run
-solved and the baseline failed, and vice versa; $p$ is an exact two-sided
-sign test on those seeds.
+solved and the baseline failed, and vice versa.
 
 \begin{table}[h]
 \centering
-\begin{tabular}{rlcccc}
+\begin{tabular}{rlccc}
 \toprule
-$k$ & Weighting & Success & Mean steps (successes) & Gained/lost & $p$ \\
+$k$ & Weighting & Success & Mean steps (successes) & Gained/lost \\
 \midrule
-0.05 & older more & 50/60 & 624 & +4/$-$2 & 0.69 \\
-0.01 & baseline & 48/60 & 626 & -- & -- \\
-0.01 & baseline, rerun & 49/60 & 627 & +1/$-$0 & 1.00 \\
-0 & equal & 47/60 & 631 & +2/$-$3 & 1.00 \\
-$-$0.01 & newer slightly & 51/60 & 631 & +4/$-$1 & 0.38 \\
-$-$0.05 & newer more & 47/60 & 663 & +5/$-$6 & 1.00 \\
-$-$0.1 & newer strongly & 41/60 & 669 & +4/$-$11 & 0.12 \\
+0.05 & older more & 50/60 & 624 & +4/$-$2 \\
+0.01 & baseline & 48/60 & 626 & -- \\
+0.01 & baseline, rerun & 49/60 & 627 & +1/$-$0 \\
+0 & equal & 47/60 & 631 & +2/$-$3 \\
+$-$0.01 & newer slightly & 51/60 & 631 & +4/$-$1 \\
+$-$0.05 & newer more & 47/60 & 663 & +5/$-$6 \\
+$-$0.1 & newer strongly & 41/60 & 669 & +4/$-$11 \\
 \bottomrule
 \end{tabular}
 \caption{Ensemble weight sweep, final checkpoint, validation block,
@@ -267,7 +266,7 @@ $-$0.1 & newer strongly & 41/60 & 669 & +4/$-$11 & 0.12 \\
         episodes between runs are therefore noise. This also applies to
         the 30-episode comparisons in Table~\ref{tab:results}.
   \item \textbf{Small $k$ ($-0.01$ to $0.05$) cannot be distinguished}
-        (47--51/60, all $p \ge 0.38$). The highest score, $k=-0.01$
+        (47--51/60). The highest score, $k=-0.01$
         at 51/60, is not evidence of an improvement.
   \item \textbf{Strongly favouring the newest predictions is worse.} At
         $k=-0.1$ success drops to 41/60 (11 seeds lost, 4 gained), and
@@ -396,23 +395,22 @@ averages up to 20 predictions per step instead of 50.
 
 \begin{table}[h]
 \centering
-\begin{tabular}{lcccc}
+\begin{tabular}{lccc}
 \toprule
-Model (ensemble, $k=0.01$) & Success & Mean steps (successes) & Gained/lost & $p$ \\
+Model (ensemble, $k=0.01$) & Success & Mean steps (successes) & Gained/lost \\
 \midrule
-Baseline, 100k & 51/60 & 627 & -- & -- \\
-Demos + recoveries, 50k & 52/60 & 655 & +6/$-$5 & 1.00 \\
-Demos + recoveries, 100k & 52/60 & 640 & +7/$-$6 & 1.00 \\
-Demos + recoveries, $K=20$, 100k & 42/60 & 679 & +5/$-$14 & 0.06 \\
+Baseline, 100k & 51/60 & 627 & -- \\
+Demos + recoveries, 50k & 52/60 & 655 & +6/$-$5 \\
+Demos + recoveries, 100k & 52/60 & 640 & +7/$-$6 \\
+Demos + recoveries, $K=20$, 100k & 42/60 & 679 & +5/$-$14 \\
 \midrule
-Baseline, 200k (Table~\ref{tab:results}) & 48/60 & 626 & & \\
+Baseline, 200k (Table~\ref{tab:results}) & 48/60 & 626 & \\
 \bottomrule
 \end{tabular}
 \caption{Recovery-data and chunk-length runs on the same 60 validation
-seeds (6{,}000{,}000--6{,}000{,}059). Gained/lost and $p$ are relative to the
-baseline at 100k (exact two-sided sign test). Against the 200k baseline,
-the recovery model at 100k is +9/$-$5 ($p=0.42$) and $K=20$ is +5/$-$11
-($p=0.21$). All runs are reported. Every failure is a timeout.}
+seeds (6{,}000{,}000--6{,}000{,}059). Gained/lost is relative to the
+baseline at 100k. Against the 200k baseline,
+the recovery model at 100k is +9/$-$5 and $K=20$ is +5/$-$11. All runs are reported. Every failure is a timeout.}
 \label{tab:recovery}
 \end{table}
 
@@ -420,11 +418,11 @@ the recovery model at 100k is +9/$-$5 ($p=0.42$) and $K=20$ is +5/$-$11
 \begin{itemize}
   \item \textbf{No measurable gain from the recoveries.} At matched
         training length the recovery model scores 52/60 against 51/60, with
-        7 seeds gained and 6 lost ($p=1.00$). Given the run-to-run variation
+        7 seeds gained and 6 lost. Given the run-to-run variation
         in Section~\ref{sec:ksweep}, the two cannot be distinguished.
         Successful episodes are slightly slower (640 vs.\ 627 steps).
   \item \textbf{$K=20$ is worse:} 42/60, 14 seeds lost and 5 gained against
-        the 100k baseline ($p=0.06$), with slower successes (679 steps),
+        the 100k baseline, with slower successes (679 steps),
         although its final training L1 was slightly lower (0.0199 vs.\
         0.0207 for $K=50$ on the same data). One training seed only.
   \item \textbf{Round-2 screening.} The recovery model (100k) succeeded on
