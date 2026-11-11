@@ -45,7 +45,13 @@ def main():
     parser.add_argument("--seed", type=int, default=DEV_SEED_START)
     parser.add_argument("--speed", type=float, default=1.0, help="playback speed vs real time")
     parser.add_argument("--episodes", type=int, default=0, help="stop after N (0 = until closed)")
+    parser.add_argument(
+        "--seeds", type=int, nargs="+", help="play exactly these seeds in order, then stop"
+    )
     args = parser.parse_args()
+    seed_list = list(args.seeds or [])
+    if seed_list:
+        args.episodes = len(seed_list)
 
     log = REPO / "results" / "watch_policy.stderr.log"
     log.parent.mkdir(exist_ok=True)
@@ -58,7 +64,10 @@ def main():
     tally = [0, 0]
 
     def new_episode():
-        seed = seed_for_slot(state["slot"], state["seed"])
+        if seed_list:
+            seed = seed_list.pop(0)
+        else:
+            seed = seed_for_slot(state["slot"], state["seed"])
         ts = env.reset(seed=seed)
         process.reset()
         state["seed"] = seed + 1

@@ -20,12 +20,19 @@ import torch.nn.functional as F
 from submission.act.model import ACT, ACTConfig
 
 
-def load_data(root: Path):
+def load_data(roots):
+    """Load and concatenate one or more exported datasets (e.g. demos + recoveries)."""
     t = time.time()
-    rgb = np.load(root / "rgb.npy")  # fully into RAM (~2.4 GB uint8)
-    state = np.load(root / "state.npy")
-    action = np.load(root / "action.npy")
-    ends = np.load(root / "episode_ends.npy")
+    rgb, state, action, ends, offset = [], [], [], [], 0
+    for root in roots:
+        rgb.append(np.load(root / "rgb.npy"))  # fully into RAM (~2.4 GB uint8 for the demos)
+        state.append(np.load(root / "state.npy"))
+        action.append(np.load(root / "action.npy"))
+        ends.append(np.load(root / "episode_ends.npy") + offset)
+        offset += len(state[-1])
+        print(f"  {root}: {len(state[-1])} frames / {len(ends[-1])} episodes", flush=True)
+    rgb = rgb[0] if len(rgb) == 1 else np.concatenate(rgb)
+    state, action, ends = np.concatenate(state), np.concatenate(action), np.concatenate(ends)
     starts = np.concatenate([[0], ends[:-1]])
     ep_end = np.empty(len(state), np.int64)  # exclusive end of each frame's episode
     for s, e in zip(starts, ends, strict=True):
@@ -64,7 +71,7 @@ def random_shift(x, pad=4):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data", default="datasets/move_plate")
+    p.add_argument("--data", nargs="+", default=["datasets/move_plate"])
     p.add_argument("--out", default="checkpoints/act-baseline")
     p.add_argument("--steps", type=int, default=150_000)
     p.add_argument("--max-hours", type=float, default=8.5)
@@ -84,7 +91,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     dev = torch.device("cuda")
 
-    rgb, state, action, ep_end = load_data(Path(args.data))
+    rgb, state, action, ep_end = load_data([Path(d) for d in args.data])
     stats = norm_stats(state, action)
     s_mean, s_std, a_mean, a_std = (
         torch.tensor(stats[k], device=dev)

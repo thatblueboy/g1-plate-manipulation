@@ -29,12 +29,12 @@
 We train an Action Chunking with Transformers (ACT) policy on the 60 BiGym2
 \texttt{move\_plate} human demonstrations to move a plate between two racks
 with a Unitree G1 and Dex1-1 grippers, using only the three onboard cameras
-and proprioception. On the public Advaitic seed block the baseline scores
-27/30 (90\%, balanced across the six source slots), exactly at the pass
-threshold. On a private validation block the same checkpoint scores 24/30
-(80\%), so we estimate its true success rate at about 85\% (51/60 pooled,
-95\% CI 74--92\%) and do not treat the public pass as conclusive. All
-failures are timeouts; no episode ended in a fall.
+and proprioception. The baseline does \emph{not} meet the 90\% criterion.
+A 30-episode public run scored 27/30 (90\%), exactly at the threshold, but
+larger 60-episode runs score 49/60 (81.7\%) on the public block and 48/60
+(80.0\%) on a private validation block. Pooled over these two disjoint
+blocks, the success rate is 97/120 (80.8\%). All failures are timeouts;
+no episode ended in a fall.
 \todo{Add one sentence on your improvement and its measured effect.}
 \end{abstract}
 
@@ -124,7 +124,8 @@ steps/s). Figure~\ref{fig:loss} shows the training loss.
 \paragraph{Inference.} Two execution modes:
 \emph{temporal ensembling}~\cite{zhao2023act}, which queries every step and
 averages all overlapping predictions for the current step with weights
-$w_i=e^{-0.01 i}$; and \emph{chunked}, which executes the first 10 actions of
+$w_i=e^{-0.01 i}$ ($i=0$ oldest; $k=0.01$ by default, varied in
+Section~\ref{sec:ksweep}); and \emph{chunked}, which executes the first 10 actions of
 each prediction. Inference takes about 4.5\,ms per step on the GPU (ensemble mode).
 The policy runs in a separate Python environment through the evaluator's
 \texttt{--policy-python} process boundary.
@@ -154,27 +155,31 @@ $\approx10^{-7}$ early in training (see Section~\ref{sec:discussion}).}
 %------------------------------------------------------------------------------
 \section{Experiments}
 
-\paragraph{Protocol.} Every run uses the unmodified evaluator: 30 episodes,
-five per source slot. To avoid tuning on the public seeds, we compared
+\paragraph{Protocol.} Every run uses the unmodified evaluator: 30 or 60 episodes,
+split equally across the six source slots. To avoid tuning on the public seeds, we compared
 checkpoints and execution modes on a private validation block starting at
-seed 6{,}000{,}000. We ran the public block (7{,}310{,}000+) once, on the
-final configuration. All reports are complete, integrity-valid and
-slot-balanced. Intervals are Wilson 95\% confidence intervals.
+seed 6{,}000{,}000. We ran the public block (7{,}310{,}000+) only with the final
+configuration, once with 30 and once with 60 episodes; both runs are reported. All reports are complete, integrity-valid and
+slot-balanced.
 
 \begin{table}[h]
 \centering
-\begin{tabular}{llccc}
+\begin{tabular}{llcc}
 \toprule
-Checkpoint & Execution & Seeds & Success & 95\% CI \\
+Checkpoint & Execution & Seeds & Success \\
 \midrule
-100k steps & ensemble & validation & 25/30 (83\%) & 66--93\% \\
-200k steps & ensemble & validation & 24/30 (80\%) & 63--90\% \\
-200k steps & chunk (10) & validation & 21/30 (70\%) & 52--83\% \\
+100k steps & ensemble & validation & 25/30 (83\%) \\
+200k steps & ensemble & validation & 24/30 (80\%) \\
+200k steps & chunk (10) & validation & 21/30 (70\%) \\
+200k steps & ensemble & validation & 48/60 (80.0\%) \\
 \midrule
-200k steps & ensemble & \textbf{public} & \textbf{27/30 (90\%)} & 74--97\% \\
+200k steps & ensemble & public & 27/30 (90\%) \\
+200k steps & ensemble & public & \textbf{49/60 (81.7\%)} \\
 \bottomrule
 \end{tabular}
-\caption{Baseline results. Every failure is a timeout; there were no falls and no policy errors.}
+\caption{Baseline results. All runs are reported; the 30- and 60-episode
+plans from the same seed start share some seeds, so they are not pooled.
+Every failure is a timeout; there were no falls and no policy errors.}
 \label{tab:results}
 \end{table}
 
@@ -188,6 +193,9 @@ Run & Slot 1 & Slot 2 & Slot 3 & Slot 4 & Slot 5 & Slot 6 \\
 200k, ensemble (val) & 3/5 & 5/5 & 3/5 & 4/5 & 5/5 & 4/5 \\
 200k, chunk 10 (val) & 4/5 & 3/5 & 3/5 & 4/5 & 5/5 & 2/5 \\
 200k, ensemble (public) & 4/5 & 5/5 & 4/5 & 4/5 & 5/5 & 5/5 \\
+\midrule
+200k, ensemble (val, 60) & 6/10 & 10/10 & 8/10 & 7/10 & 9/10 & 8/10 \\
+200k, ensemble (public, 60) & 9/10 & 7/10 & 8/10 & 8/10 & 8/10 & 9/10 \\
 \bottomrule
 \end{tabular}
 \caption{Per-source-slot successes.}
@@ -204,32 +212,233 @@ Run & Slot 1 & Slot 2 & Slot 3 & Slot 4 & Slot 5 & Slot 6 \\
         within noise) even though the training loss kept falling. This
         suggests the policy is limited by data coverage, not by
         optimisation.
-  \item \textbf{The public pass is marginal.} 27/30 is exactly the required
-        count. Pooled with validation, the final checkpoint scores 51/60
-        (85\%, CI 74--92\%).
-  \item Slot~2 has the fewest demonstrations (6), yet it is not the weakest slot. Slots 1 and 3
-        account for more of the failures.
+  \item \textbf{The 30-episode public pass was luck.} 27/30 is exactly the
+        required count. The 60-episode runs (49/60 public, 48/60
+        validation) both fail the criterion, which needs 54/60. The true rate is
+        about 81\%, so 30-episode runs alone cannot separate variants a few
+        points apart.
+  \item \textbf{No slot is consistently weak.} Slot~2 has the fewest
+        demonstrations (6) and went 10/10 on validation but 7/10 on public.
+        Failures are spread across all slots, which points to a general
+        failure mode rather than missing coverage of one slot.
 \end{itemize}
+
+\subsection{Ensemble weight sweep}
+\label{sec:ksweep}
+
+\paragraph{Setup.} Temporal ensembling averages the up to 50 predictions
+for the current step with weights $w_i=e^{-k i}$, where $i=0$ is the
+oldest prediction. Positive $k$ weights older predictions more (smoother,
+slower to react); negative $k$ weights the newest predictions more (more
+reactive). This changes inference only, not the trained model. We varied
+$k$ with the final checkpoint on the same 60 validation seeds
+(6{,}000{,}000--6{,}000{,}059) as the baseline, and repeated the baseline
+setting $k=0.01$ as a control. ``Gained/lost'' counts seeds that a run
+solved and the baseline failed, and vice versa; $p$ is an exact two-sided
+sign test on those seeds.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{rlcccc}
+\toprule
+$k$ & Weighting & Success & Mean steps (successes) & Gained/lost & $p$ \\
+\midrule
+0.05 & older more & 50/60 & 624 & +4/$-$2 & 0.69 \\
+0.01 & baseline & 48/60 & 626 & -- & -- \\
+0.01 & baseline, rerun & 49/60 & 627 & +1/$-$0 & 1.00 \\
+0 & equal & 47/60 & 631 & +2/$-$3 & 1.00 \\
+$-$0.01 & newer slightly & 51/60 & 631 & +4/$-$1 & 0.38 \\
+$-$0.05 & newer more & 47/60 & 663 & +5/$-$6 & 1.00 \\
+$-$0.1 & newer strongly & 41/60 & 669 & +4/$-$11 & 0.12 \\
+\bottomrule
+\end{tabular}
+\caption{Ensemble weight sweep, final checkpoint, validation block,
+60 episodes each. All runs are reported. Every failure is a timeout.}
+\label{tab:ksweep}
+\end{table}
+
+\paragraph{Results.}
+\begin{itemize}
+  \item \textbf{Runs are not perfectly repeatable.} The identical rerun of
+        the baseline scored 49/60 instead of 48/60 (seed 6000001 flipped).
+        The simulator replays logged actions exactly, so the difference most
+        likely comes from small floating-point differences in GPU
+        inference that grow over an episode. Differences of one or two
+        episodes between runs are therefore noise. This also applies to
+        the 30-episode comparisons in Table~\ref{tab:results}.
+  \item \textbf{Small $k$ ($-0.01$ to $0.05$) cannot be distinguished}
+        (47--51/60, all $p \ge 0.38$). The highest score, $k=-0.01$
+        at 51/60, is not evidence of an improvement.
+  \item \textbf{Strongly favouring the newest predictions is worse.} At
+        $k=-0.1$ success drops to 41/60 (11 seeds lost, 4 gained), and
+        successful episodes take longer (669 vs.\ 626 steps). The slowdown
+        already appears at $k=-0.05$.
+  \item \textbf{No setting reaches the 54/60 criterion.}
+  \item \textbf{Some seeds are borderline.} Seeds 6000000, 6000001,
+        6000012, 6000042 and 6000070 flip in two or more variants; the
+        remaining baseline failures fail under every $k$.
+\end{itemize}
+
+\todo{Your interpretation: what this sweep says about the failure modes in
+Section~\ref{sec:failures}, and whether it changes which improvement you
+pursue.}
 
 %------------------------------------------------------------------------------
 \section{Failure Analysis}
 \label{sec:failures}
 
 All failures ran to the 1700-step limit with the robot standing, which
-means the policy stalled rather than fell. Failing validation seeds:
-6000000, 6000001, 6000007, 6000011, 6000012, 6000020, 6000022, 6000024 (ensemble runs).
-Seeds 6000007, 6000011 and 6000012 failed with both checkpoints.
-Public-block failures: seeds 7310005, 7310023, 7310042.
+means the policy stalled rather than fell. Failing seeds of the final
+checkpoint in the 60-episode runs:
+validation 6000000, 6000001, 6000007, 6000011, 6000012, 6000023, 6000024,
+6000036, 6000042, 6000044, 6000060, 6000070;
+public 7310005, 7310023, 7310026, 7310029, 7310035, 7310038, 7310042,
+7310052, 7310056, 7310069, 7310072.
+Seeds 6000007, 6000011 and 6000012 also failed with the 100k checkpoint.
+Public seeds 7310005, 7310023 and 7310042 failed in both the 30- and
+60-episode runs, so these failures recur rather than being one-off. Runs are
+not perfectly repeatable, however: an identical rerun of the 60-episode
+validation run flipped seed 6000001 from failure to success
+(Section~\ref{sec:ksweep}).
 
-\todo{Watch the failing episodes and classify each one (e.g.\ missed grasp,
-plate slipped during side-step, misaligned insertion, never released,
-oscillation near the target). Give a table of counts per category and per
-slot, with frame evidence, and state which category your improvement
-targets.}
+\paragraph{Method.} BiGym's success check requires all of the following, held for
+one second: the plate centre within 5\,cm of a rack-2 slot site; plate
+tilt $\le 20^\circ$ from upright; contact with rack~2; no contact with the
+table; and no gripper ``holding'' the plate. Holding is defined as
+\emph{any} contact between a gripper finger pad and the plate, even when
+the gripper is open. We replayed each failed episode's logged actions from its seed
+(\texttt{submission/tools/diagnose\_failures.py}). All 23 replays reproduced
+the recorded outcome. We then evaluated each condition on the final state.
+This tool reads privileged simulator state and is used only for offline
+analysis, never by the policy. We also inspected the logged gripper and base commands, and
+watched the episodes in the live viewer.
+
+\paragraph{Motion structure.} In every failure the policy closes the
+gripper exactly once, at a normal time (steps 191--296), completes the full
+side-step, and opens the gripper at a normal time (except seed 6000007,
+which never releases, and 6000044, which releases late at step 1054). It
+then stands still until the time limit. No failure shows a second grasp or
+any other recovery attempt.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{4.3cm}cp{8.2cm}}
+\toprule
+Final-state category & Count & Seeds \\
+\midrule
+Grasp missed: plate never leaves rack~1 & 3 & 6000011, 7310005, 7310069 \\
+Placed short: 8--14\,cm from slot~1 (mostly in $+y$), touching the table,
+  tilted, and/or pad contact & 11 & 6000000, 6000001, 6000012, 6000036,
+  6000070, 7310026, 7310038, 7310042, 7310052, 7310056, 7310072 \\
+Dropped flat on the table (tilt $\approx 90^\circ$) & 2 & 6000060, 7310035 \\
+Near-miss: just outside one or two limits ($\le 6.6$\,cm, $\le 28^\circ$,
+  or pad contact only) & 7 & 6000007, 6000023, 6000024, 6000042, 6000044,
+  7310023, 7310029 \\
+\bottomrule
+\end{tabular}
+\caption{Failure categories from the final state of the replayed episodes
+(both 60-episode runs, 23 failures). Every placement targets rack-2 slot~1,
+the slot nearest the robot after the side-step.}
+\label{tab:failures}
+\end{table}
+
+\paragraph{Gripper contact.} In 14 of 23 failures a finger pad still
+touches the plate at the end of the episode. For seed 6000023 this is the
+\emph{only} violated condition (2\,cm from the slot, $5^\circ$ tilt). In
+most other cases contact occurs together with large placement errors. We checked
+contact only on the final frame, not across the whole one-second success window.
+
+\paragraph{Effect of rack position.} Using the reset states of all 120
+episodes, success falls to 66\% (19/29) when rack~2 is shifted
+2.5--5\,cm further right (away from the robot's side-step direction),
+against 82--90\% for the other position ranges. No clear pattern appears
+for rack~1. Each bin contains only about 30 episodes, so we treat this as
+suggestive.
+
+\todo{Add what you observed when watching the failures (e.g.\ why grasps
+miss, what the hand does at release, whether the plate slips during the
+side-step), with frame evidence. Conclude which failure mode your
+improvement targets and why.}
 
 %------------------------------------------------------------------------------
 \section{Improvement}
 \label{sec:improvement}
+
+\subsection{Attempt 1: human recovery data (HG-DAgger style)}
+\label{sec:recovery}
+
+\paragraph{Collection.} We ran the 200k baseline (ensemble) on 126
+episodes from a separate collection block (seeds 5{,}500{,}000--5{,}999{,}999;
+disjoint from the demonstrations, the validation block and the public
+block); 24 failed. When an episode timed out, an operator took over
+and finished the placement (\texttt{submission/tools/collect\_recovery.py}).
+The operator controlled the left-hand pose and the gripper from a mouse and
+keyboard panel, plus sidesteps of the base. A damped least-squares IK
+solver (\texttt{submission/tools/arm\_ik.py}) converted the hand target into
+the 7 left-arm joint targets of the action vector. The IK reads privileged
+simulator state; it is used only in this disclosed data-collection workflow
+and never by the evaluated policy. Only frames after the takeover were
+recorded, as (observation, executed action) pairs in the same format as
+the demonstrations, followed by a 0.5\,s hold. Failures with the plate still
+in rack~1, or tilted over $60^\circ$ and touching the table, were skipped
+(5 of 24). Of 15 saved recoveries, the 13 that met the success condition
+at save time were kept (13 seeds, 8{,}383 frames).
+
+\paragraph{Training.} Same architecture and hyperparameters as the
+baseline, trained from scratch for 100k steps on the 60 demonstrations plus
+the 13 recoveries (46{,}028 frames; training frames are sampled uniformly,
+so about 18\% of samples come from recoveries). The baseline's 100k
+checkpoint is the matched comparison.
+
+\paragraph{Chunk-length ablation.} The same demos-plus-recoveries data and
+schedule, with chunk length $K=20$ instead of 50. Temporal ensembling then
+averages up to 20 predictions per step instead of 50.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Model (ensemble, $k=0.01$) & Success & Mean steps (successes) & Gained/lost & $p$ \\
+\midrule
+Baseline, 100k & 51/60 & 627 & -- & -- \\
+Demos + recoveries, 50k & 52/60 & 655 & +6/$-$5 & 1.00 \\
+Demos + recoveries, 100k & 52/60 & 640 & +7/$-$6 & 1.00 \\
+Demos + recoveries, $K=20$, 100k & 42/60 & 679 & +5/$-$14 & 0.06 \\
+\midrule
+Baseline, 200k (Table~\ref{tab:results}) & 48/60 & 626 & & \\
+\bottomrule
+\end{tabular}
+\caption{Recovery-data and chunk-length runs on the same 60 validation
+seeds (6{,}000{,}000--6{,}000{,}059). Gained/lost and $p$ are relative to the
+baseline at 100k (exact two-sided sign test). Against the 200k baseline,
+the recovery model at 100k is +9/$-$5 ($p=0.42$) and $K=20$ is +5/$-$11
+($p=0.21$). All runs are reported. Every failure is a timeout.}
+\label{tab:recovery}
+\end{table}
+
+\paragraph{Results.}
+\begin{itemize}
+  \item \textbf{No measurable gain from the recoveries.} At matched
+        training length the recovery model scores 52/60 against 51/60, with
+        7 seeds gained and 6 lost ($p=1.00$). Given the run-to-run variation
+        in Section~\ref{sec:ksweep}, the two cannot be distinguished.
+        Successful episodes are slightly slower (640 vs.\ 627 steps).
+  \item \textbf{$K=20$ is worse:} 42/60, 14 seeds lost and 5 gained against
+        the 100k baseline ($p=0.06$), with slower successes (679 steps),
+        although its final training L1 was slightly lower (0.0199 vs.\
+        0.0207 for $K=50$ on the same data). One training seed only.
+  \item \textbf{Round-2 screening.} The recovery model (100k) succeeded on
+        106/126 fresh collection seeds (5{,}800{,}000+, 5{,}850{,}000+,
+        5{,}900{,}000+). Of the 20 failures, 2 left the plate in rack~1, 6
+        ended tilted over $60^\circ$ on the table, and 12 ended near or against
+        rack~2 (just outside the 5\,cm or $20^\circ$ limits, still held, or held
+        against the table). These are different seeds from the round-1
+        screen (24/126 failures), so the two failure counts are not a
+        paired comparison.
+\end{itemize}
+
+\todo{Your interpretation of the recovery and $K=20$ results, and whether a
+second recovery round is worth it.}
 
 \todo{Describe your substantive improvement: the hypothesis (linked to
 Section~\ref{sec:failures}), the change, and how it was trained or
@@ -256,14 +465,14 @@ obviously harmful. Lowering $\beta$ or removing the CVAE would be an
 informative ablation.
 
 \paragraph{Limitations.} 60 demonstrations; one training seed; 30-episode
-evaluations have wide confidence intervals; and success has not been tested
+evaluations are small samples (the 30-episode public run scored 90\% but the 60-episode run 81.7\%); and success has not been tested
 beyond the simulator's $\pm5$\,cm rack variation.
 
 \paragraph{Next steps.} Simulation-generated demonstrations balanced across
 slots (MimicGen-style pose-relative trajectory adaptation, kept only if
 successful); stall detection with a retry behaviour, since every failure is
 a timeout; and larger validation runs (60--90 episodes) to make comparisons
-statistically meaningful.
+more reliable.
 
 %------------------------------------------------------------------------------
 \section{Reproduction}
@@ -289,8 +498,19 @@ MUJOCO_GL=egl uv run advaitic-eval --policy submission.act.policy:make_policy \
     --policy-python $PWD/.venv-act/bin/python --method act-baseline-ensemble \
     --checkpoint last.pt --episodes 30 --out results/<new-dir>
 \end{lstlisting}
-The complete pipeline (training, validation and the public run) is in
-\texttt{submission/act/run\_overnight.sh}.
+{\sloppy The complete pipeline (training, validation and the public run) is in
+\texttt{submission/act/run\_overnight.sh}. The ensemble weight sweep is
+\texttt{submission/act/sweep\_k.sh} (values via \texttt{KS="..."}), and
+\texttt{uv run python -m submission.tools.compare\_runs BASE RUN...}
+produces the paired comparison in Table~\ref{tab:ksweep}.
+For the recovery runs (Section~\ref{sec:recovery}),
+\texttt{submission/act/screen\_failures.sh} finds failing collection seeds,
+\texttt{uv run python -m submission.tools.collect\_recovery --failed-in results/<screen-dirs>}
+records recoveries,
+\texttt{submission/act/run\_recovery\_round1.sh} packs them
+(\texttt{submission.act.pack\_recoveries --successful-only}), trains and
+evaluates them, and \texttt{submission/act/run\_chunk20.sh} runs the $K=20$
+ablation.\par}
 \todo{State where the checkpoint can be downloaded, with its SHA-256.}
 
 %------------------------------------------------------------------------------
@@ -308,7 +528,13 @@ The complete pipeline (training, validation and the public run) is in
         \texttt{submission/act/} and \texttt{submission/tools/} (data
         export, model, training, policy wrapper, viewer tools and the
         overnight pipeline) was written with Claude Code (Anthropic) at my
-        direction. \todo{State precisely what you reviewed, rewrote,
+        direction, as were the recovery-collection interface, the IK solver,
+        the packing and screening scripts, and the ensemble-sweep and
+        chunk-length pipelines. I collected the recovery demonstrations
+        myself. The failure-diagnosis tool, the final-state
+        categorisation in Table~\ref{tab:failures} and the rack-position
+        analysis were also produced with Claude Code. I verified them by
+        watching the failed episodes. \todo{State precisely what you reviewed, rewrote,
         designed or decided yourself, and what the AI produced. Be
         specific; this is checked in the technical deep dive.}
 \end{itemize}
