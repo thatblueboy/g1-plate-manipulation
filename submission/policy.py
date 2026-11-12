@@ -1,14 +1,14 @@
-"""Default evaluated policy: ACT trained on the demonstrations plus round-1
-human recoveries (100k steps), temporal ensembling with k=0.01.
+"""Default evaluated policy: ACT trained on the demonstrations plus all 22
+human recoveries (rounds 1 and 2, 100k steps), temporal ensembling with k=0.01.
 
-This was the best configuration on the private validation block (52/60,
-seeds 6,000,000+; see report/report.tex, "Summary and selected
+This was the best configuration on the private validation block (54/60,
+seeds 6,000,000+, 60-episode plan; see report/report.tex, "Summary and selected
 configuration"). It needs PyTorch, so it runs in the separate model
 environment .venv-act (setup in README.md, "Running the submitted policy"):
 
     MUJOCO_GL=egl uv run advaitic-eval --policy submission.policy:make_policy \
-        --policy-python $PWD/.venv-act/bin/python --method act-recovery-r1 \
-        --checkpoint act-recovery-r1-100k-3089b880 --episodes 30 --out results/final
+        --policy-python $PWD/.venv-act/bin/python --method act-recovery-r2 \
+        --checkpoint act-recovery-r2-100k-1752981f --episodes 30 --out results/final
 
 The checkpoint is stored with Git LFS at submission/act/weights/ (run
 `git lfs pull` if it is a small pointer file). ACT_CHECKPOINT overrides it;
@@ -21,8 +21,8 @@ import os
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-DEFAULT_CHECKPOINT = REPO / "submission/act/weights/act-recovery-r1-100k.pt"
-DEFAULT_SHA256 = "3089b88081ea3ab949544b51fc6d2f2f5b626f285903c64183ea5bcbef5dab44"
+DEFAULT_CHECKPOINT = REPO / "submission/act/weights/act-recovery-r2-100k.pt"
+DEFAULT_SHA256 = "1752981f7307abfcd7465f63d2dfbec2efd6fee36ff39b0f8cdc7e895b19143e"
 
 
 def make_policy():
