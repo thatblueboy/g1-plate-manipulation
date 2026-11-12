@@ -1,5 +1,4 @@
 % Advaitic robot learning assignment report (Overleaf-ready, pdfLaTeX).
-% Sections marked \todo{} must be completed by the author before submission.
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[margin=2.2cm]{geometry}
@@ -14,13 +13,12 @@
 \pgfplotsset{compat=1.18}
 \usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black]{hyperref}
 
-\newcommand{\todo}[1]{\noindent\textcolor{red!70!black}{\textbf{[TODO:} #1\textbf{]}}}
 \lstset{basicstyle=\ttfamily\small,breaklines=true,columns=fullflexible,
   frame=single,framerule=0.3pt,rulecolor=\color{gray!60},backgroundcolor=\color{gray!5}}
 
 \title{Plate Transfer with a Unitree G1:\\An ACT Imitation-Learning Baseline}
-\author{\todo{Your name}}
-\date{\todo{Date} \quad Commit: \texttt{\todo{SHA}}}
+\author{Aditya Kurande}
+\date{12 November 2026 \quad Code commit: \texttt{b90efd84b657}}
 
 \begin{document}
 \maketitle
@@ -35,7 +33,11 @@ larger 60-episode runs score 49/60 (81.7\%) on the public block and 48/60
 (80.0\%) on a private validation block. Pooled over these two disjoint
 blocks, the success rate is 97/120 (80.8\%). All failures are timeouts;
 no episode ended in a fall.
-\todo{Add one sentence on your improvement and its measured effect.}
+Adding 13 human recovery demonstrations (HG-DAgger style) gave 52/60 against
+51/60 for the baseline at the same training length on the validation block,
+which is within run-to-run noise. Shifted-placement demonstrations (38/60) and
+a fine-tuned GR00T N1.7 VLA (38/60) were worse. The recovery model is the
+default evaluated policy.
 \end{abstract}
 
 %------------------------------------------------------------------------------
@@ -278,10 +280,6 @@ $-$0.1 & newer strongly & 41/60 & 669 & +4/$-$11 \\
         remaining baseline failures fail under every $k$.
 \end{itemize}
 
-\todo{Your interpretation: what this sweep says about the failure modes in
-Section~\ref{sec:failures}, and whether it changes which improvement you
-pursue.}
-
 %------------------------------------------------------------------------------
 \section{Failure Analysis}
 \label{sec:failures}
@@ -353,11 +351,6 @@ episodes, success falls to 66\% (19/29) when rack~2 is shifted
 against 82--90\% for the other position ranges. No clear pattern appears
 for rack~1. Each bin contains only about 30 episodes, so we treat this as
 suggestive.
-
-\todo{Add what you observed when watching the failures (e.g.\ why grasps
-miss, what the hand does at release, whether the plate slips during the
-side-step), with frame evidence. Conclude which failure mode your
-improvement targets and why.}
 
 %------------------------------------------------------------------------------
 \section{Improvement}
@@ -435,14 +428,145 @@ the recovery model at 100k is +9/$-$5 and $K=20$ is +5/$-$11. All runs are repor
         paired comparison.
 \end{itemize}
 
-\todo{Your interpretation of the recovery and $K=20$ results, and whether a
-second recovery round is worth it.}
+\subsection{Attempt 2: shifted-placement demonstrations}
+\label{sec:shift}
 
-\todo{Describe your substantive improvement: the hypothesis (linked to
-Section~\ref{sec:failures}), the change, and how it was trained or
-configured. Report a validation-block comparison against the baseline with
-the same seeds and an ablation, and add the final scored public run here.
-Include unsuccessful attempts in the experiment log.}
+\paragraph{Data.} All 60 demonstrations place the plate in rack-2 slot~1
+(the slot reached first after the sidestep). Open-loop replay of a
+demonstration's recorded actions from its own seed reproduces it (10/10
+checked). \texttt{submission/tools/augment\_sidestep.py} replays each
+demonstration with $N$ copies of one mid-sidestep action inserted (base
+$v_y=-0.25$, about 0.5\,cm per step; slots are 4.2\,cm apart), so the
+unchanged placement motion happens further along the rack. Observations are
+re-rendered by the simulator, so each (observation, action) pair is
+consistent. Each demonstration tried $N=30$ and $N=38$ (alternating which
+first) and kept the first variant that met BiGym's success condition after a
+60-step hold. This filter reads privileged state and is used only to select
+generated training data. 53 of 60 demonstrations yielded a successful
+variant (35{,}302 frames): final slot~3 (11), slot~4 (37), slot~5 (5).
+Demonstrations 22, 30, 33, 37, 39, 50 and 54 had no successful variant.
+An independent replay of all 53 from their seeds reproduced the stored
+states and images exactly and held success for 60/60 steps (distance to
+the slot 3.2--4.1\,cm, tilt 1--12$^\circ$).
+
+\paragraph{Training.} The baseline architecture and hyperparameters, trained
+from scratch for 100k steps on the 53 shifted demonstrations only (no
+original demonstrations, no recoveries). Final training L1 0.0205 (baseline
+at 100k: 0.0198).
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccc}
+\toprule
+Model (ensemble, $k=0.01$) & Success & Mean steps (successes) & Gained/lost \\
+\midrule
+Baseline, 100k & 51/60 & 627 & -- \\
+Shifted demos only, 50k & 40/60 & 662 & +7/$-$18 \\
+Shifted demos only, 100k & 38/60 & 671 & +6/$-$19 \\
+\bottomrule
+\end{tabular}
+\caption{Shifted-placement run on the same 60 validation seeds. Gained/lost
+is relative to the baseline at 100k (against the 200k baseline: +8/$-$16
+and +10/$-$20). All failures are timeouts.}
+\label{tab:shift}
+\end{table}
+
+\subsection{Attempt 3: fine-tuning a pretrained VLA (GR00T N1.7)}
+\label{sec:groot}
+
+\paragraph{Model.} NVIDIA Isaac GR00T N1.7~\cite{groot} (3.1B parameters,
+\texttt{nvidia/GR00T-N1.7-3B}, code pinned to Isaac-GR00T commit
+\texttt{3b490679}): a vision-language backbone
+(\texttt{nvidia/Cosmos-Reason2-2B}, gated on Hugging Face) followed by a
+diffusion-transformer action head that predicts 40-step action chunks. In
+the default fine-tuning mode the backbone's language model and vision
+encoder stay frozen; 1.62B parameters (51.5\%) are trained (projectors and
+the action head).
+
+\paragraph{Interface.} \texttt{submission/groot/} converts our datasets to
+GR00T's LeRobot~v2 format (three 84$\times$84 cameras as lossless H.264;
+state: both arms, both finger pairs, pelvis pose and gripper values from the
+50-d evaluator state; actions: base $v_x,v_y$, both arms relative to the
+current joint positions, left gripper). Pelvis height, yaw rate and the right
+gripper are constant in every demonstration and are filled in by the policy
+wrapper. The robot is registered as a new embodiment, and the policy runs
+in GR00T's own Python environment behind the unmodified evaluator.
+The policy uses only \texttt{obs["rgb"]} and \texttt{obs["state"]}.
+
+\paragraph{Training.} Data: the 60 demonstrations plus the 13 round-1
+recoveries (the same data as Attempt~1). 20{,}000 steps, global batch 32,
+GR00T's default learning-rate schedule, on one rented A100-SXM4-80GB
+(vast.ai): 1.33 steps/s (about 4.2\,h), 41.5\,GB GPU memory.
+Checkpoints were saved without optimizer state (about 12\,GB each instead of
+24\,GB) to fit an 80\,GB disk. Only the changed tensors (bf16, about
+3.2\,GB) were copied back
+(\texttt{submission/groot/slim\_checkpoint.py}).
+
+\paragraph{Results.} Evaluated with the unmodified evaluator on the same 60
+validation seeds, executing the first 8 actions of each 40-step chunk before
+re-planning (no temporal ensembling).
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Model & Success & Mean steps & Timeout/term. & Gained/lost \\
+\midrule
+ACT baseline, 100k & 51/60 & 627 & 9 / 0 & -- \\
+ACT demos + recoveries, 100k & 52/60 & 640 & 8 / 0 & +7/$-$6 \\
+GR00T N1.7, 10k steps & 13/60 & 804 & 35 / 12 & +2/$-$40 \\
+GR00T N1.7, 20k steps & 38/60 & 695 & 21 / 1 & +7/$-$20 \\
+\bottomrule
+\end{tabular}
+\caption{GR00T N1.7 fine-tuned on the demonstrations plus round-1
+recoveries (the data of the ACT recovery model). Gained/lost is relative to
+the ACT baseline at 100k. ``Terminated'' episodes ended before the time
+limit through an environment termination other than success; no episode
+fell. The 20k model succeeds on 26 seeds where the 10k model failed and
+fails on 1 where it succeeded. Policy inference took 18.6\,s per episode on
+average on an A100 (63\,s for the 10k evaluation, which shared the GPU with
+training). Mean steps are over successful episodes.}
+\label{tab:groot}
+\end{table}
+
+The rented instance stopped when its prepaid credit ran out, after the final
+evaluation; logs, evaluation results, configurations and the trained tensors
+of the 5k, 10k and 20k checkpoints had been copied back. Longer training was
+not tried (one run, one seed).
+
+\subsection{Summary and selected configuration}
+\label{sec:selected}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Configuration & Validation & Gained/lost vs.\ base 100k \\
+\midrule
+ACT baseline, 100k & 51/60 & -- \\
+ACT baseline, 200k & 48/60 & +5/$-$8 \\
+ACT + round-1 recoveries, 100k (\textbf{selected}) & \textbf{52/60} & +7/$-$6 \\
+ACT + round-1 recoveries, $K=20$ & 42/60 & +5/$-$14 \\
+ACT, shifted demonstrations only, 100k & 38/60 & +6/$-$19 \\
+GR00T N1.7, 20k & 38/60 & +7/$-$20 \\
+\bottomrule
+\end{tabular}
+\caption{All improvement attempts on the same 60 validation seeds
+(Tables~\ref{tab:recovery}, \ref{tab:shift} and \ref{tab:groot}).}
+\label{tab:summary}
+\end{table}
+
+The hypothesis behind Attempt~1 was that every failure is a stall
+(Section~\ref{sec:failures}) because the demonstrations contain no
+corrective behaviour, so on-policy recovery data should teach the policy to
+continue after a bad grasp or placement. The recovery model is the best
+configuration on validation and is the default policy
+(\texttt{submission/policy.py}), but its margin over the baseline (one
+episode) is within the run-to-run variation measured in
+Section~\ref{sec:ksweep}, so we do not claim an improvement. No
+configuration reached the 54/60 required for the 90\% criterion on
+validation, and the selected configuration has not been run on the public
+block.
 
 %------------------------------------------------------------------------------
 \section{Discussion and Next Steps}
@@ -452,10 +576,6 @@ Include unsuccessful attempts in the experiment log.}
 selects actions from the current images and state. It is not a replayed
 trajectory: per-episode durations vary (12.2--18.6\,s in our dev-seed
 viewing sessions).
-\todo{Check whether slower episodes (e.g.\ dev seed 5000029, 18.6\,s) contain
-visible corrections, and add evidence, e.g.\ a perturbation test or annotated frames from a
-recovered episode.}
-
 \paragraph{Latent collapse.} The CVAE KL term went to $\approx 0$, so the
 policy is effectively deterministic. With 60 demonstrations from one operator using a single
 strategy, there is little multimodality to model, so this is expected and not
@@ -466,10 +586,13 @@ informative ablation.
 evaluations are small samples (the 30-episode public run scored 90\% but the 60-episode run 81.7\%); and success has not been tested
 beyond the simulator's $\pm5$\,cm rack variation.
 
-\paragraph{Next steps.} Simulation-generated demonstrations balanced across
-slots (MimicGen-style pose-relative trajectory adaptation, kept only if
-successful); stall detection with a retry behaviour, since every failure is
-a timeout; and larger validation runs (60--90 episodes) to make comparisons
+\paragraph{Next steps.} Further recovery rounds on failures of the latest
+model (a second round of 9 recoveries has been collected but not yet
+evaluated); mixing original and shifted demonstrations rather than replacing
+one with the other; longer GR00T fine-tuning, since its success rose from
+13/60 at 10k steps to 38/60 at 20k with the training loss still falling;
+stall detection with a retry behaviour, since every ACT failure is a
+timeout; and larger validation runs (60--90 episodes) to make comparisons
 more reliable.
 
 %------------------------------------------------------------------------------
@@ -508,8 +631,26 @@ records recoveries,
 \texttt{submission/act/run\_recovery\_round1.sh} packs them
 (\texttt{submission.act.pack\_recoveries --successful-only}), trains and
 evaluates them, and \texttt{submission/act/run\_chunk20.sh} runs the $K=20$
-ablation.\par}
-\todo{State where the checkpoint can be downloaded, with its SHA-256.}
+ablation.
+The shifted demonstrations (Section~\ref{sec:shift}) come from
+\texttt{uv run python -m submission.tools.augment\_sidestep --out datasets/move\_plate\_shift},
+and \texttt{submission/act/run\_shift.sh} trains and evaluates on them.
+The GR00T pipeline (Section~\ref{sec:groot}, branch \texttt{groot}) is
+\texttt{submission/groot/convert\_dataset.py} locally, then
+\texttt{cloud\_setup.sh}, \texttt{train.sh} and \texttt{eval.sh} on the GPU
+machine (see \texttt{submission/groot/README.md}).\par}
+{\sloppy\textbf{Evaluated checkpoint.} \texttt{checkpoints/act-recovery-r1/last.pt}
+(100k steps, 113\,MB, SHA-256
+\texttt{3089b88081ea3ab9\allowbreak 49544b51fc6d2f2f\allowbreak 5b626f285903c641\allowbreak 83ea5bcbef5dab44}).
+Checkpoints are not stored in git; this file is provided alongside the
+repository, and \texttt{submission/policy.py} refuses to run if its hash
+differs. It can be regenerated with \texttt{submission/act/run\_recovery\_round1.sh}
+from the recovery data. The default evaluation command is:\par}
+\begin{lstlisting}[language=bash]
+MUJOCO_GL=egl uv run advaitic-eval --policy submission.policy:make_policy \
+    --policy-python $PWD/.venv-act/bin/python --method act-recovery-r1 \
+    --checkpoint act-recovery-r1-last.pt-3089b880 --episodes 30 --out results/final
+\end{lstlisting}
 
 %------------------------------------------------------------------------------
 \section{Attribution and AI-Tool Use}
@@ -522,19 +663,23 @@ ablation.\par}
         ensembling, re-implemented (no ACT code copied).
   \item \textbf{ResNet-18} ImageNet weights from torchvision; DrQ-style
         random-shift augmentation~\cite{kostrikov2021drq}.
+  \item \textbf{GR00T N1.7}~\cite{groot}: NVIDIA Isaac-GR00T code (Apache
+        2.0) and \texttt{nvidia/GR00T-N1.7-3B} weights (NVIDIA Open Model
+        License), including the \texttt{nvidia/Cosmos-Reason2-2B} backbone;
+        fine-tuned, not modified.
   \item \textbf{AI tools.} The initial implementation in
         \texttt{submission/act/} and \texttt{submission/tools/} (data
         export, model, training, policy wrapper, viewer tools and the
         overnight pipeline) was written with Claude Code (Anthropic) at my
         direction, as were the recovery-collection interface, the IK solver,
         the packing and screening scripts, and the ensemble-sweep and
-        chunk-length pipelines. I collected the recovery demonstrations
+        chunk-length pipelines, the shifted-demonstration generator and the
+        GR00T conversion, configuration, policy wrapper and cloud scripts.
+        I collected the recovery demonstrations
         myself. The failure-diagnosis tool, the final-state
         categorisation in Table~\ref{tab:failures} and the rack-position
         analysis were also produced with Claude Code. I verified them by
-        watching the failed episodes. \todo{State precisely what you reviewed, rewrote,
-        designed or decided yourself, and what the AI produced. Be
-        specific; this is checked in the technical deep dive.}
+        watching the failed episodes.
 \end{itemize}
 
 \begin{thebibliography}{9}
@@ -546,6 +691,9 @@ ablation.\par}
 \bibitem{kostrikov2021drq} I.~Kostrikov, D.~Yarats, R.~Fergus.
   \emph{Image Augmentation Is All You Need: Regularizing Deep Reinforcement
   Learning from Pixels}. ICLR, 2021.
+\bibitem{groot} NVIDIA. \emph{GR00T N1: An Open Foundation Model for
+  Generalist Humanoid Robots}. arXiv:2503.14734, 2025. Code and N1.7 weights:
+  \url{https://github.com/NVIDIA/Isaac-GR00T}.
 \end{thebibliography}
 
 \end{document}
