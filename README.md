@@ -2,6 +2,35 @@
 
 Transfer one plate between two racks using a Unitree G1 in MuJoCo. Build a repeatable, observation-driven system, evaluate it honestly, and explain how you improved it.
 
+## Running the submitted policy
+
+The default policy (`submission.policy:make_policy`) is ACT trained on the 60 demonstrations plus 13 human recovery demonstrations (100k steps, temporal ensembling). It was the best configuration on our private validation block: **52/60 (86.7%), below the 90% criterion**. All experiments, including unsuccessful ones, are in [`report/report.tex`](report/report.tex).
+
+The checkpoint (113 MB, SHA-256 `3089b88081ea3ab949544b51fc6d2f2f5b626f285903c64183ea5bcbef5dab44`) is stored with Git LFS at `submission/act/weights/act-recovery-r1-100k.pt`. The policy checks this hash before loading.
+
+```bash
+# 1. Checkpoint (Git LFS; skip if the clone already fetched it)
+git lfs install && git lfs pull
+
+# 2. Evaluator environment (pinned)
+uv sync --locked --extra video
+uv run advaitic-check
+
+# 3. Model environment with PyTorch (Python 3.12, CUDA 12.6 wheels; also runs on CPU, slower)
+uv venv --python 3.12 .venv-act
+uv pip install --python .venv-act/bin/python -r submission/act/requirements.txt \
+    --index-strategy unsafe-best-match
+
+# 4. Evaluate (use a new output directory for each run)
+MUJOCO_GL=egl uv run advaitic-eval \
+  --policy submission.policy:make_policy \
+  --policy-python "$PWD/.venv-act/bin/python" \
+  --method act-recovery-r1 --checkpoint act-recovery-r1-100k-3089b880 \
+  --episodes 30 --out results/final
+```
+
+`--policy-python` is required: the policy imports PyTorch, which is not part of the evaluator environment. Training and data-generation commands for every run are in the report's Reproduction section.
+
 ## Task
 
 Move the plate from rack 1 into **any of the six slots in rack 2**. The source slot varies, and each rack has up to ±5 cm of x/y position variation. The embodiment is the **Unitree G1 with Dex1-1 grippers**, supported by BiGym2's frozen Balance/Walk controller. You do not need to train locomotion.
