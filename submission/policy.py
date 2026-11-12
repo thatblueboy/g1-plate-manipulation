@@ -1,30 +1,41 @@
-"""Interface example only: holds the observed pose, does not solve the task."""
+"""Default evaluated policy: ACT trained on the demonstrations plus round-1
+human recoveries (100k steps), temporal ensembling with k=0.01.
 
-import numpy as np
+This was the best ACT configuration on the private validation block
+(52/60, seeds 6,000,000+; report Section "Improvement"). It needs PyTorch, so
+run it in the model environment (see submission/act/requirements.txt):
 
+    MUJOCO_GL=egl uv run advaitic-eval --policy submission.policy:make_policy \
+        --policy-python $PWD/.venv-act/bin/python --method act-recovery-r1 \
+        --checkpoint act-recovery-r1-last.pt-3089b880 --episodes 30 --out results/final
 
-class HoldPose:
-    def reset(self):
-        self.action = None
+The checkpoint is not stored in git. Place it at
+checkpoints/act-recovery-r1/last.pt, or point ACT_CHECKPOINT at it.
+ACT_MODE, ACT_ENSEMBLE_K and ACT_EXEC_HORIZON are honoured as in
+submission/act/policy.py.
+"""
 
-    def __call__(self, obs):
-        if self.action is None:
-            # Fixed robot limits are public metadata, not live simulator state.
-            import json
-            from importlib.resources import files
+import hashlib
+import os
+from pathlib import Path
 
-            layout = json.loads(files("advaitic_eval").joinpath("action_layout.json").read_text())
-            low = np.asarray(layout["action_low"])
-            high = np.asarray(layout["action_high"])
-            state = obs["state"]
-            raw = np.zeros(20, dtype=np.float32)
-            raw[2] = state[48]  # observed pelvis height
-            raw[4:11] = state[:7]
-            raw[11:18] = state[9:16]
-            raw[18:20] = state[44:46]
-            self.action = np.clip(2 * (raw - low) / (high - low) - 1, -1, 1).astype(np.float32)
-        return self.action
+REPO = Path(__file__).resolve().parents[1]
+DEFAULT_CHECKPOINT = REPO / "checkpoints/act-recovery-r1/last.pt"
+DEFAULT_SHA256 = "3089b88081ea3ab949544b51fc6d2f2f5b626f285903c64183ea5bcbef5dab44"
 
 
 def make_policy():
-    return HoldPose()
+    checkpoint = Path(os.environ.get("ACT_CHECKPOINT", DEFAULT_CHECKPOINT))
+    if not checkpoint.is_file():
+        raise FileNotFoundError(
+            f"ACT checkpoint not found: {checkpoint}. Copy act-recovery-r1/last.pt "
+            f"(sha256 {DEFAULT_SHA256}) there or set ACT_CHECKPOINT."
+        )
+    if checkpoint.resolve() == DEFAULT_CHECKPOINT.resolve():
+        digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        if digest != DEFAULT_SHA256:
+            raise ValueError(f"{checkpoint} has sha256 {digest}, expected {DEFAULT_SHA256}")
+
+    from submission.act.policy import ACTPolicy
+
+    return ACTPolicy(checkpoint=str(checkpoint))
