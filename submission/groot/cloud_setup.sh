@@ -10,7 +10,8 @@ GROOT_COMMIT=3b49067943eb1ab2eb2203b93d461c4390c78da3  # Isaac-GR00T main, 2026-
 
 command -v uv > /dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
-command -v ffmpeg > /dev/null || { sudo apt-get update && sudo apt-get install -y ffmpeg; }
+SUDO=$(command -v sudo || true)  # vast.ai containers log in as root
+command -v ffmpeg > /dev/null || { $SUDO apt-get update && $SUDO apt-get install -y ffmpeg; }
 ffmpeg -version | head -1
 
 # Evaluator environment (pinned by this repo's uv.lock).
@@ -26,6 +27,11 @@ git -C "$GROOT_DIR" checkout --quiet "$GROOT_COMMIT"
 
 # Base checkpoint (~6 GB) into the Hugging Face cache.
 (cd "$GROOT_DIR" && uv run hf download nvidia/GR00T-N1.7-3B)
+# Every N1.7 checkpoint loads the gated VLM backbone nvidia/Cosmos-Reason2-2B:
+# accept its licence on huggingface.co, then `uv run hf auth login` here.
+(cd "$GROOT_DIR" && uv run hf download nvidia/Cosmos-Reason2-2B config.json > /dev/null) || {
+  echo "No access to gated nvidia/Cosmos-Reason2-2B: accept the licence on"
+  echo "huggingface.co and run: (cd $GROOT_DIR && uv run hf auth login)"; exit 1; }
 
 "$GROOT_DIR/.venv/bin/python" -c "import torch, gr00t, torchcodec; \
 print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), \

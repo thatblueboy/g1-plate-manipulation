@@ -4,7 +4,9 @@
 # SMOKE=1 runs 20 steps first: it generates meta/stats.json and checks that the
 # data loader, modality config and model accept the dataset before a long run.
 # Variables: GROOT_EMBODIMENT (new_embodiment | unitree_g1), STEPS (20000),
-# BATCH (32), SAVE_EVERY (5000), NUM_GPUS (1), GROOT_DIR.
+# BATCH (32), SAVE_EVERY (5000), SAVE_LIMIT (10), SAVE_ONLY_MODEL (unset; set
+# to 1 to skip optimizer state: ~12 GB instead of ~24 GB per checkpoint, but
+# the run cannot be resumed), NUM_GPUS (1), GROOT_DIR.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 GROOT_DIR=${GROOT_DIR:-$HOME/Isaac-GR00T}
@@ -28,7 +30,8 @@ run () {  # steps output_dir
     --output-dir "$2" \
     --max-steps "$1" \
     --save-steps "$SAVE_EVERY" \
-    --save-total-limit 10 \
+    --save-total-limit "${SAVE_LIMIT:-10}" \
+    ${SAVE_ONLY_MODEL:+--save-only-model} \
     --global-batch-size "$BATCH" \
     --dataloader-num-workers 8
 }

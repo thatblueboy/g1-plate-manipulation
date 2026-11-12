@@ -46,6 +46,17 @@ path. `GROOT_EMBODIMENT=unitree_g1` trains the same config under the
 `REAL_G1` embodiment; this is an ablation, not the default, because the
 pretrained G1 data used different state/action keys.
 
+## Measured on the rented machine (vast.ai, 1x A100-SXM4-80GB)
+
+- Setup (`cloud_setup.sh`): GR00T venv + evaluator venv + weights use ~28 GB of
+  disk, including the gated `nvidia/Cosmos-Reason2-2B` backbone (licence must be
+  accepted on Hugging Face and the machine logged in).
+- Fine-tuning (batch 32, default tuning mode): 1.33 steps/s (20,000 steps
+  about 4.2 h), 41.5 GB GPU memory.
+- Checkpoint size: ~24 GB with optimizer state, ~12 GB with
+  `SAVE_ONLY_MODEL=1`, plus ~12 GB for the final model. An 80 GB disk fits
+  `SAVE_ONLY_MODEL=1 SAVE_LIMIT=2`; the 32 GB default does not.
+
 ## Workflow
 
 Locally (evaluator venv, no GPU):
@@ -61,7 +72,8 @@ machine. Then:
 
 ```bash
 bash submission/groot/cloud_setup.sh
-SMOKE=1 DATA=datasets/groot/move_plate_r1 OUT=checkpoints/groot-r1 bash submission/groot/train.sh
+SMOKE=1 SAVE_ONLY_MODEL=1 SAVE_LIMIT=2 DATA=datasets/groot/move_plate_r1 OUT=checkpoints/groot-r1 \
+    bash submission/groot/train.sh
 SMOKE=1 CKPT=checkpoints/groot-r1/checkpoint-5000 bash submission/groot/eval.sh
 CKPT=checkpoints/groot-r1/checkpoint-20000 bash submission/groot/eval.sh
 ```
