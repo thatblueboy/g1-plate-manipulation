@@ -18,7 +18,7 @@
 
 \title{Plate Transfer with a Unitree G1:\\An ACT Imitation-Learning Baseline}
 \author{Aditya Kurande}
-\date{12 November 2026 \quad Code commit: \texttt{fa9a8687ccde}}
+\date{12 November 2026 \quad Code commit: \texttt{18b99dd8a1a2}}
 
 \begin{document}
 \maketitle
@@ -428,6 +428,67 @@ the recovery model at 100k is +9/$-$5 and $K=20$ is +5/$-$11. All runs are repor
         paired comparison.
 \end{itemize}
 
+\paragraph{Why the recoveries did not raise the success rate.} We replayed
+every validation failure of the baseline (100k) and of the recovery model
+(100k) from its seed, as in Section~\ref{sec:failures}, and counted grasps
+in the logged gripper commands (a grasp is a closed period of at least
+30 steps).
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{7.2cm}cc}
+\toprule
+Final state of failed episodes & Baseline 100k & + recoveries 100k \\
+\midrule
+Grasp missed (plate still in rack~1) & 1 & 0 \\
+In rack~2, tilted $>20^\circ$ & 4 & 1 \\
+In rack~2, 5.5--5.9\,cm from the slot & 2 & 2 \\
+In rack~2 within the distance and tilt limits, finger still touching & 0 & 2 \\
+Dropped or short, touching the table & 2 & 3 \\
+\midrule
+Total failures & 9 & 8 \\
+Failures ending with a finger pad on the plate & 4 & 5 \\
+Episodes with a second grasp (of 60): succeeded / failed & 0 / 0 & 1 / 5 \\
+\bottomrule
+\end{tabular}
+\caption{Validation failures (seeds 6{,}000{,}000--6{,}000{,}059) by final
+state, from replays of the logged actions.}
+\label{tab:recovery-failures}
+\end{table}
+
+\begin{itemize}
+  \item \textbf{The recoveries fixed the failures they demonstrate.} The
+        recovery model solves 7 seeds the baseline failed: the missed grasp
+        (6000011), all four tilted placements (6000020, 6000037, 6000054,
+        6000066) and both placements just outside 5\,cm (6000022, and
+        6000044 after releasing, re-grasping and re-placing the plate). Of
+        the 13 recoveries, 9 start with the gripper open, i.e.\ the operator
+        took over after the policy had released the plate, and 2 contain a
+        second grasp.
+  \item \textbf{The learned re-grasp is unreliable and fires on seeds the
+        baseline solved.} The baseline never grasps twice. The recovery
+        model grasps a second time in 6 episodes and succeeds in 1. In
+        6000038 and 6000012 the second grasp knocks the plate onto the table;
+        in 6000041 and 6000069 the policy alternates between grasping and
+        releasing (4 and 5 grasps) until the time limit. Four of the six
+        seeds it newly fails (6000017, 6000038, 6000041, 6000069) contain a
+        second grasp.
+  \item \textbf{Releasing cleanly is still the main problem.} Five of the 8
+        failures end with a finger pad touching the plate, which BiGym counts
+        as holding it. In two of them (6000024, 6000041) the plate is
+        otherwise inside every limit; in two more it is 5.6--5.9\,cm from the
+        slot.
+  \item \textbf{Net effect.} Seven seeds gained and six lost give 52/60
+        against 51/60. The recoveries changed \emph{which} seeds fail rather
+        than how many. Two seeds fail with both models (6000012, 6000060).
+\end{itemize}
+
+Possible explanations, not tested: 13 recoveries (about 18\% of training
+samples) teach that re-grasping exists but not reliably when to stop; the
+policy has no memory of earlier grasps, so a closed-loop re-grasp can repeat
+indefinitely; and nothing in training rewards breaking finger contact after
+release, which the success check requires.
+
 \subsection{Attempt 2: shifted-placement demonstrations}
 \label{sec:shift}
 
@@ -567,6 +628,15 @@ Section~\ref{sec:ksweep}, so we do not claim an improvement. No
 configuration reached the 54/60 required for the 90\% criterion on
 validation, and the selected configuration has not been run on the public
 block.
+
+\paragraph{Videos.} \texttt{report/videos/} contains seven validation
+episodes of the selected policy, rendered from a third-person camera with the
+policy's three cameras below: successes from source slots 4, 2 and 6 (seeds
+6000001--6000003), two dropped plates (6000012, 6000038), a placement that
+fails only because a finger still touches the plate (6000041), and the
+re-grasp recovery (6000044). They are replays of the actions logged by the
+evaluator, re-rendered by \texttt{submission/tools/render\_episodes.py}; each
+replay reproduced the evaluated outcome.
 
 %------------------------------------------------------------------------------
 \section{Discussion and Next Steps}
