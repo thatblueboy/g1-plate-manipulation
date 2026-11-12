@@ -18,7 +18,7 @@
 
 \title{Plate Transfer with a Unitree G1:\\An ACT Imitation-Learning Baseline}
 \author{Aditya Kurande}
-\date{12 November 2026 \quad Code commit: \texttt{18b99dd8a1a2}}
+\date{12 November 2026 \quad Code commit: \texttt{c14599a}}
 
 \begin{document}
 \maketitle
@@ -35,9 +35,15 @@ blocks, the success rate is 97/120 (80.8\%). All failures are timeouts;
 no episode ended in a fall.
 Adding 13 human recovery demonstrations (HG-DAgger style) gave 52/60 against
 51/60 for the baseline at the same training length on the validation block,
-which is within run-to-run noise. Shifted-placement demonstrations (38/60) and
-a fine-tuned GR00T N1.7 VLA (38/60) were worse. The recovery model is the
-default evaluated policy.
+which is within run-to-run noise. A second round, 9 more recoveries on failures
+of the round-1 model (22 in total), gave 54/60 (90\%) on validation at both 50k and
+100k steps, the first configuration to reach the criterion there. Since more
+than a dozen configurations had been compared on that block, we checked the
+selected model once on the held-out public block: 52/60 (86.7\%), below the
+criterion (106/120, 88.3\%, pooled over both blocks).
+Shifted-placement demonstrations (38/60) and
+a fine-tuned GR00T N1.7 VLA (38/60) were worse. The round-2 recovery model
+(100k) is the default evaluated policy.
 \end{abstract}
 
 %------------------------------------------------------------------------------
@@ -160,8 +166,10 @@ $\approx10^{-7}$ early in training (see Section~\ref{sec:discussion}).}
 \paragraph{Protocol.}\label{sec:protocol} Every run uses the unmodified evaluator: 30 or 60 episodes,
 split equally across the six source slots. To avoid tuning on the public seeds, we compared
 checkpoints and execution modes on a private validation block starting at
-seed 6{,}000{,}000. We ran the public block (7{,}310{,}000+) only with the final
-configuration, once with 30 and once with 60 episodes; both runs are reported. The evaluator draws a slot-balanced
+seed 6{,}000{,}000. We ran the public block (7{,}310{,}000+) with only two configurations:
+the baseline (200k), once with 30 and once with 60 episodes, and the
+finally selected round-2 recovery model, once with 60 episodes after it had
+been selected on validation. All three runs are reported. The evaluator draws a slot-balanced
 plan from the starting seed, so a 60-episode validation run uses seeds
 between 6{,}000{,}000 and 6{,}000{,}070 (a 30-episode run, 6{,}000{,}000--6{,}000{,}049);
 every validation comparison in this report uses the same 60-episode plan.
@@ -505,6 +513,54 @@ policy has no memory of earlier grasps, so a closed-loop re-grasp can repeat
 indefinitely; and nothing in training rewards breaking finger contact after
 release, which the success check requires.
 
+\paragraph{Round 2.} The first explanation suggests more recovery data, on
+the failures of the current model. The operator recovered failures of the
+round-1 model (100k) from the round-2 screen above with the same tool: 13
+saved recoveries on 12 seeds, of which the 9 that met the success condition
+at save time were kept (9 seeds, 5{,}674 frames). The model was retrained
+from scratch for 100k steps with the same settings on the 60 demonstrations
+plus all 22 recoveries (51{,}702 frames, about 27\% from recoveries;
+\texttt{submission/act/run\_recovery\_round2.sh}).
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Model (ensemble, $k=0.01$) & Success & Mean steps & vs.\ base 100k & vs.\ round 1 \\
+\midrule
+Round 1 (13 recoveries), 100k & 52/60 & 640 & +7/$-$6 & -- \\
+Round 2 (22 recoveries), 50k & 54/60 & 659 & +8/$-$5 & +4/$-$2 \\
+Round 2 (22 recoveries), 100k & \textbf{54/60} & 648 & +7/$-$4 & +6/$-$4 \\
+\bottomrule
+\end{tabular}
+\caption{Round-2 recovery model on the same 60-episode validation plan. Both
+runs are qualifying with status PASS (54/60 is exactly the required count).
+Mean steps are over successful episodes. All failures are timeouts.}
+\label{tab:recovery2}
+\end{table}
+
+\begin{itemize}
+  \item \textbf{Exactly at the criterion, and not a significant gain.} 54/60
+        is the minimum passing count. Against round 1 the 100k model gains
+        6 seeds and loses 4; a paired sign test on these 10 seeds gives
+        $p\approx0.75$, and the run-to-run variation of
+        Section~\ref{sec:ksweep} is of the same size. The 50k and 100k
+        checkpoints both reach 54/60, with different failing seeds.
+  \item \textbf{Selection bias.} More than a dozen configurations (checkpoints, ensemble weights, data variants) were compared on
+        the same 60 validation seeds, so its validation score is optimistic.
+        The held-out public-block run (Section~\ref{sec:selected}) scored
+        52/60.
+  \item \textbf{Remaining failures (100k).} 6000014, 6000022, 6000024,
+        6000041, 6000044, 6000046. Two (6000024, 6000041) fail with every
+        model trained with recoveries (both rounds, 50k and 100k, and
+        $K=20$) but were solved by the baseline at 100k. In round 1 they ended inside the distance and
+        tilt limits with a finger still touching the plate; with the round-2
+        model the plate is still held at the time limit (above rack~2 in
+        6000024, inside it in 6000041). In 6000022 the
+        policy grasps three times without finishing; in 6000012 it re-grasps
+        once and succeeds (video below).
+\end{itemize}
+
 \subsection{Attempt 2: shifted-placement demonstrations}
 \label{sec:shift}
 
@@ -622,41 +678,55 @@ Configuration & Validation & Gained/lost vs.\ base 100k \\
 \midrule
 ACT baseline, 100k & 51/60 & -- \\
 ACT baseline, 200k & 48/60 & +5/$-$8 \\
-ACT + round-1 recoveries, 100k (\textbf{selected}) & \textbf{52/60} & +7/$-$6 \\
+ACT + round-1 recoveries, 100k & 52/60 & +7/$-$6 \\
+ACT + round-2 recoveries (22), 50k & 54/60 & +8/$-$5 \\
+ACT + round-2 recoveries (22), 100k (\textbf{selected}) & \textbf{54/60} & +7/$-$4 \\
 ACT + round-1 recoveries, $K=20$ & 42/60 & +5/$-$14 \\
 ACT, shifted demonstrations only, 100k & 38/60 & +6/$-$19 \\
 GR00T N1.7, 20k & 38/60 & +7/$-$20 \\
 \bottomrule
 \end{tabular}
 \caption{All improvement attempts on the same 60 validation seeds
-(Tables~\ref{tab:recovery}, \ref{tab:shift} and \ref{tab:groot}).}
+(Tables~\ref{tab:recovery}, \ref{tab:recovery2}, \ref{tab:shift} and \ref{tab:groot}).}
 \label{tab:summary}
 \end{table}
 
 The hypothesis behind Attempt~1 was that every failure is a stall
 (Section~\ref{sec:failures}) because the demonstrations contain no
 corrective behaviour, so on-policy recovery data should teach the policy to
-continue after a bad grasp or placement. The recovery model is the best
-configuration on validation and is the default policy
-{\sloppy(\texttt{submission/policy.py}). Its validation run
-(\texttt{report/\allowbreak eval\_runs/\allowbreak 20261110-2249-val-60-r1-100k}) is complete,
-slot-balanced and integrity-valid, with status FAIL: 52/60 against the 54
-required, and per source slot 9/10, 9/10, 7/10, 10/10, 9/10 and 8/10. It ran
+continue after a bad grasp or placement. The round-2 recovery model (100k)
+is the best configuration on validation and is the default policy
+{\sloppy(\texttt{submission/policy.py}). Of the two round-2 checkpoints that
+scored 54/60 we chose 100k because its weakest source slot is 8/10 (50k: 7/10).
+Its validation run
+(\texttt{report/\allowbreak eval\_runs/\allowbreak 20261112-0753-val-60-r2-100k}) is complete,
+slot-balanced and integrity-valid, with status PASS: 54/60, per source slot
+9/10, 8/10, 9/10, 9/10, 9/10 and 10/10. It ran
 through \texttt{submission.\allowbreak act.\allowbreak policy:\allowbreak make\_policy} with the checkpoint set
 by environment variable; \texttt{submission.policy:make\_policy} loads the
-same file (SHA-256 prefix \texttt{3089b880}) with the same settings.
-Its margin over the baseline (one episode) is within the run-to-run variation measured in
-Section~\ref{sec:ksweep}, so we do not claim an improvement. No
-configuration reached the 54/60 required for the 90\% criterion on
-validation, and the selected configuration has not been run on the public
-block.\par}
+same file (SHA-256 prefix \texttt{1752981f}) with the same settings.\par}
+
+\paragraph{Held-out check on the public block.} {\sloppy Because the model was
+selected on the validation seeds, we then ran it once on the public block
+with the exact submitted command
+(\texttt{submission.policy:\allowbreak make\_policy}, 60 episodes, seeds
+7{,}310{,}000--7{,}310{,}078; \texttt{report/\allowbreak eval\_runs/\allowbreak 20261112-public-\allowbreak 60-r2-100k}).
+It scored \textbf{52/60 (86.7\%)}, status \textbf{FAIL} (complete,
+slot-balanced, integrity-valid), per source slot 10/10, 7/10, 8/10, 8/10,
+9/10 and 10/10; all 8 failures are timeouts. The validation pass therefore
+did not hold on unseen seeds. On the same public seeds the 200k baseline
+scored 49/60; the round-2 model gains 7 and loses 4. Pooled over the two
+disjoint 60-episode blocks the selected model scores 106/120 (88.3\%),
+against 97/120 (80.8\%) for the baseline. \textbf{We do not claim the 90\%
+criterion is met.}\par}
 
 \paragraph{Videos.} \texttt{report/videos/} contains seven validation
-episodes of the selected policy, rendered from a third-person camera with the
+episodes of the selected policy (round 2, 100k), rendered from a third-person camera with the
 policy's three cameras below: successes from source slots 4, 2 and 6 (seeds
-6000001--6000003), two dropped plates (6000012, 6000038), a placement that
-fails only because a finger still touches the plate (6000041), and the
-re-grasp recovery (6000044). They are replays of the actions logged by the
+6000001--6000003), the two seeds that fail with every recovery-trained model (6000024: the
+plate is still held above rack~2 at the time limit; 6000041: the plate is in
+rack~2 but never released), a failure with repeated grasps that ends holding
+the plate tilted (6000022), and a re-grasp recovery that succeeds (6000012). They are replays of the actions logged by the
 evaluator, re-rendered by \texttt{submission/tools/render\_episodes.py}; each
 replay reproduced the evaluated outcome.
 
@@ -679,8 +749,8 @@ evaluations are small samples (the 30-episode public run scored 90\% but the 60-
 beyond the simulator's $\pm5$\,cm rack variation.
 
 \paragraph{Next steps.} Further recovery rounds on failures of the latest
-model (a second round of 9 recoveries has been collected but not yet
-evaluated); mixing original and shifted demonstrations rather than replacing
+model, since round 2 moved validation from 52/60 to 54/60, with recoveries that
+show breaking finger contact after release; mixing original and shifted demonstrations rather than replacing
 one with the other; longer GR00T fine-tuning, since its success rose from
 13/60 at 10k steps to 38/60 at 20k with the training loss still falling;
 stall detection with a retry behaviour, since every ACT failure is a
@@ -694,10 +764,10 @@ more reliable.
 
 {\sloppy The default policy \texttt{submission.policy:make\_policy} is the selected
 configuration (Section~\ref{sec:selected}): ACT trained on the
-demonstrations plus 13 recoveries, 100k steps, temporal ensembling with
+demonstrations plus all 22 recoveries (rounds 1 and 2), 100k steps, temporal ensembling with
 $k=0.01$. Its checkpoint is stored in the repository with Git LFS at
-\texttt{submission/\allowbreak act/\allowbreak weights/\allowbreak act-recovery-r1-100k.pt} (113\,MB, SHA-256
-\texttt{3089b88081ea3ab9\allowbreak 49544b51fc6d2f2f\allowbreak 5b626f285903c641\allowbreak 83ea5bcbef5dab44});
+\texttt{submission/\allowbreak act/\allowbreak weights/\allowbreak act-recovery-r2-100k.pt} (113\,MB, SHA-256
+\texttt{1752981f7307abfc\allowbreak d7465f63d2dfbec2\allowbreak efd6fee36ff39b0f\allowbreak 8cdc7e895b19143e});
 the policy refuses to load a file with a different hash.
 \texttt{-{}-policy-python} is required because the policy imports PyTorch,
 which is not in the evaluator environment.\par}
@@ -709,8 +779,8 @@ uv venv --python 3.12 .venv-act            # model environment (PyTorch)
 uv pip install --python .venv-act/bin/python -r submission/act/requirements.txt \
     --index-strategy unsafe-best-match
 MUJOCO_GL=egl uv run advaitic-eval --policy submission.policy:make_policy \
-    --policy-python $PWD/.venv-act/bin/python --method act-recovery-r1 \
-    --checkpoint act-recovery-r1-100k-3089b880 --episodes 30 --out results/final
+    --policy-python $PWD/.venv-act/bin/python --method act-recovery-r2 \
+    --checkpoint act-recovery-r2-100k-1752981f --episodes 30 --out results/final
 \end{lstlisting}
 
 \subsection{Training and experiments}
@@ -747,7 +817,8 @@ For the recovery runs (Section~\ref{sec:recovery}),
 records recoveries,
 \texttt{submission/act/run\_recovery\_round1.sh} packs them
 (\texttt{submission.act.pack\_recoveries --successful-only}), trains and
-evaluates them, and \texttt{submission/act/run\_chunk20.sh} runs the $K=20$
+evaluates them, \texttt{submission/act/run\_recovery\_round2.sh} does the
+same with all 22 recoveries (the selected model), and \texttt{submission/act/run\_chunk20.sh} runs the $K=20$
 ablation.
 The shifted demonstrations (Section~\ref{sec:shift}) come from
 \texttt{uv run python -m submission.tools.augment\_sidestep --out datasets/move\_plate\_shift},
