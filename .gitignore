@@ -11,3 +11,7 @@ datasets/
 .env
 *.mp4
 .venv-act/
+report/*.aux
+report/*.log
+report/*.out
+!report/videos/*.mp4

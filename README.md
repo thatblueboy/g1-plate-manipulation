@@ -31,6 +31,8 @@ MUJOCO_GL=egl uv run advaitic-eval \
 
 `--policy-python` is required: the policy imports PyTorch, which is not part of the evaluator environment. Training and data-generation commands for every run are in the report's Reproduction section.
 
+The report is [`report/report.pdf`](report/report.pdf) (source `report/report.tex`). Videos of evaluated episodes (three successes from different source slots, three failures and one self-recovery) are in [`report/videos/`](report/videos/).
+
 ## Task
 
 Move the plate from rack 1 into **any of the six slots in rack 2**. The source slot varies, and each rack has up to ±5 cm of x/y position variation. The embodiment is the **Unitree G1 with Dex1-1 grippers**, supported by BiGym2's frozen Balance/Walk controller. You do not need to train locomotion.
