@@ -18,7 +18,7 @@
 
 \title{Plate Transfer with a Unitree G1:\\An ACT Imitation-Learning Baseline}
 \author{Aditya Kurande}
-\date{12 November 2026 \quad Code commit: \texttt{b90efd84b657}}
+\date{12 November 2026 \quad Code commit: \texttt{fa9a8687ccde}}
 
 \begin{document}
 \maketitle
@@ -598,6 +598,31 @@ more reliable.
 %------------------------------------------------------------------------------
 \section{Reproduction}
 
+\subsection{Running the submitted policy}
+
+{\sloppy The default policy \texttt{submission.policy:make\_policy} is the selected
+configuration (Section~\ref{sec:selected}): ACT trained on the
+demonstrations plus 13 recoveries, 100k steps, temporal ensembling with
+$k=0.01$. Its checkpoint is stored in the repository with Git LFS at
+\texttt{submission/\allowbreak act/\allowbreak weights/\allowbreak act-recovery-r1-100k.pt} (113\,MB, SHA-256
+\texttt{3089b88081ea3ab9\allowbreak 49544b51fc6d2f2f\allowbreak 5b626f285903c641\allowbreak 83ea5bcbef5dab44});
+the policy refuses to load a file with a different hash.
+\texttt{-{}-policy-python} is required because the policy imports PyTorch,
+which is not in the evaluator environment.\par}
+
+\begin{lstlisting}[language=bash]
+git lfs install && git lfs pull            # checkpoint
+uv sync --locked --extra video             # evaluator environment
+uv venv --python 3.12 .venv-act            # model environment (PyTorch)
+uv pip install --python .venv-act/bin/python -r submission/act/requirements.txt \
+    --index-strategy unsafe-best-match
+MUJOCO_GL=egl uv run advaitic-eval --policy submission.policy:make_policy \
+    --policy-python $PWD/.venv-act/bin/python --method act-recovery-r1 \
+    --checkpoint act-recovery-r1-100k-3089b880 --episodes 30 --out results/final
+\end{lstlisting}
+
+\subsection{Training and experiments}
+
 \begin{lstlisting}[language=bash]
 # Evaluator environment (pinned) and demonstrations
 uv sync --locked --extra video
@@ -639,18 +664,6 @@ The GR00T pipeline (Section~\ref{sec:groot}, branch \texttt{groot}) is
 \texttt{submission/groot/convert\_dataset.py} locally, then
 \texttt{cloud\_setup.sh}, \texttt{train.sh} and \texttt{eval.sh} on the GPU
 machine (see \texttt{submission/groot/README.md}).\par}
-{\sloppy\textbf{Evaluated checkpoint.} \texttt{checkpoints/act-recovery-r1/last.pt}
-(100k steps, 113\,MB, SHA-256
-\texttt{3089b88081ea3ab9\allowbreak 49544b51fc6d2f2f\allowbreak 5b626f285903c641\allowbreak 83ea5bcbef5dab44}).
-Checkpoints are not stored in git; this file is provided alongside the
-repository, and \texttt{submission/policy.py} refuses to run if its hash
-differs. It can be regenerated with \texttt{submission/act/run\_recovery\_round1.sh}
-from the recovery data. The default evaluation command is:\par}
-\begin{lstlisting}[language=bash]
-MUJOCO_GL=egl uv run advaitic-eval --policy submission.policy:make_policy \
-    --policy-python $PWD/.venv-act/bin/python --method act-recovery-r1 \
-    --checkpoint act-recovery-r1-last.pt-3089b880 --episodes 30 --out results/final
-\end{lstlisting}
 
 %------------------------------------------------------------------------------
 \section{Attribution and AI-Tool Use}
