@@ -157,12 +157,25 @@ $\approx10^{-7}$ early in training (see Section~\ref{sec:discussion}).}
 %------------------------------------------------------------------------------
 \section{Experiments}
 
-\paragraph{Protocol.} Every run uses the unmodified evaluator: 30 or 60 episodes,
+\paragraph{Protocol.}\label{sec:protocol} Every run uses the unmodified evaluator: 30 or 60 episodes,
 split equally across the six source slots. To avoid tuning on the public seeds, we compared
 checkpoints and execution modes on a private validation block starting at
 seed 6{,}000{,}000. We ran the public block (7{,}310{,}000+) only with the final
-configuration, once with 30 and once with 60 episodes; both runs are reported. All reports are complete, integrity-valid and
-slot-balanced.
+configuration, once with 30 and once with 60 episodes; both runs are reported. The evaluator draws a slot-balanced
+plan from the starting seed, so a 60-episode validation run uses seeds
+between 6{,}000{,}000 and 6{,}000{,}070 (a 30-episode run, 6{,}000{,}000--6{,}000{,}049);
+every validation comparison in this report uses the same 60-episode plan.
+The evaluator's own \texttt{report.json} and \texttt{episodes.csv} for every
+scored run are in \texttt{report/eval\_runs/}, indexed with per-slot results
+in \texttt{report/eval\_runs/README.md}. All runs completed every planned
+episode with balanced slots, and the upstream integrity check passed in
+all of them. Seven runs are nevertheless flagged \emph{non-qualifying} by the
+evaluator because files covered by the submission digest changed while they
+ran (other tools were being developed and training runs started in the same
+checkout): the baseline at 100k in Table~\ref{tab:recovery}, the
+$k=-0.01$, $-0.05$ and $-0.1$ runs in Table~\ref{tab:ksweep}, and the
+three round-1 recovery-collection screening runs. The runs in
+Table~\ref{tab:results} and the selected policy's run are qualifying.
 
 \begin{table}[h]
 \centering
@@ -233,8 +246,8 @@ for the current step with weights $w_i=e^{-k i}$, where $i=0$ is the
 oldest prediction. Positive $k$ weights older predictions more (smoother,
 slower to react); negative $k$ weights the newest predictions more (more
 reactive). This changes inference only, not the trained model. We varied
-$k$ with the final checkpoint on the same 60 validation seeds
-(6{,}000{,}000--6{,}000{,}059) as the baseline, and repeated the baseline
+$k$ with the final checkpoint on the same 60-episode validation plan as the
+baseline, and repeated the baseline
 setting $k=0.01$ as a control. ``Gained/lost'' counts seeds that a run
 solved and the baseline failed, and vice versa.
 
@@ -254,7 +267,9 @@ $-$0.1 & newer strongly & 41/60 & 669 & +4/$-$11 \\
 \bottomrule
 \end{tabular}
 \caption{Ensemble weight sweep, final checkpoint, validation block,
-60 episodes each. All runs are reported. Every failure is a timeout.}
+60 episodes each. All runs are reported. Every failure is a timeout. The
+$k=-0.01$, $-0.05$ and $-0.1$ runs are flagged non-qualifying (files changed
+during the run; see Section~\ref{sec:protocol}).}
 \label{tab:ksweep}
 \end{table}
 
@@ -400,8 +415,9 @@ Demos + recoveries, $K=20$, 100k & 42/60 & 679 & +5/$-$14 \\
 Baseline, 200k (Table~\ref{tab:results}) & 48/60 & 626 & \\
 \bottomrule
 \end{tabular}
-\caption{Recovery-data and chunk-length runs on the same 60 validation
-seeds (6{,}000{,}000--6{,}000{,}059). Gained/lost is relative to the
+\caption{Recovery-data and chunk-length runs on the same 60-episode
+validation plan. The baseline 100k run is flagged non-qualifying (files
+changed during the run; see Section~\ref{sec:protocol}). Gained/lost is relative to the
 baseline at 100k. Against the 200k baseline,
 the recovery model at 100k is +9/$-$5 and $K=20$ is +5/$-$11. All runs are reported. Every failure is a timeout.}
 \label{tab:recovery}
@@ -451,7 +467,7 @@ Failures ending with a finger pad on the plate & 4 & 5 \\
 Episodes with a second grasp (of 60): succeeded / failed & 0 / 0 & 1 / 5 \\
 \bottomrule
 \end{tabular}
-\caption{Validation failures (seeds 6{,}000{,}000--6{,}000{,}059) by final
+\caption{Validation failures (60-episode plan from seed 6{,}000{,}000) by final
 state, from replays of the logged actions.}
 \label{tab:recovery-failures}
 \end{table}
@@ -622,12 +638,18 @@ The hypothesis behind Attempt~1 was that every failure is a stall
 corrective behaviour, so on-policy recovery data should teach the policy to
 continue after a bad grasp or placement. The recovery model is the best
 configuration on validation and is the default policy
-(\texttt{submission/policy.py}), but its margin over the baseline (one
-episode) is within the run-to-run variation measured in
+{\sloppy(\texttt{submission/policy.py}). Its validation run
+(\texttt{report/\allowbreak eval\_runs/\allowbreak 20261110-2249-val-60-r1-100k}) is complete,
+slot-balanced and integrity-valid, with status FAIL: 52/60 against the 54
+required, and per source slot 9/10, 9/10, 7/10, 10/10, 9/10 and 8/10. It ran
+through \texttt{submission.\allowbreak act.\allowbreak policy:\allowbreak make\_policy} with the checkpoint set
+by environment variable; \texttt{submission.policy:make\_policy} loads the
+same file (SHA-256 prefix \texttt{3089b880}) with the same settings.
+Its margin over the baseline (one episode) is within the run-to-run variation measured in
 Section~\ref{sec:ksweep}, so we do not claim an improvement. No
 configuration reached the 54/60 required for the 90\% criterion on
 validation, and the selected configuration has not been run on the public
-block.
+block.\par}
 
 \paragraph{Videos.} \texttt{report/videos/} contains seven validation
 episodes of the selected policy, rendered from a third-person camera with the
