@@ -33,17 +33,16 @@ larger 60-episode runs score 49/60 (81.7\%) on the public block and 48/60
 (80.0\%) on a private validation block. Pooled over these two disjoint
 blocks, the success rate is 97/120 (80.8\%). All failures are timeouts;
 no episode ended in a fall.
-Adding 13 human recovery demonstrations (HG-DAgger style) gave 52/60 against
-51/60 for the baseline at the same training length on the validation block,
-which is within run-to-run noise. A second round, 9 more recoveries on failures
-of the round-1 model (22 in total), gave 54/60 (90\%) on validation at both 50k and
-100k steps, the first configuration to reach the criterion there. Since more
-than a dozen configurations had been compared on that block, we checked the
-selected model once on the held-out public block: 52/60 (86.7\%), below the
-criterion (106/120, 88.3\%, pooled over both blocks).
+Adding 22 human recovery demonstrations (HG-DAgger style, collected in two
+rounds) raised validation success to 54/60 (90\%), against 51/60 for the
+baseline at the same training length. Since more than a dozen configurations
+had been compared on that block, we checked the selected model once on the
+held-out public block: 52/60 (86.7\%), below the criterion (106/120, 88.3\%,
+pooled over both blocks). Its main remaining failure is not releasing the
+plate in time.
 Shifted-placement demonstrations (38/60) and
-a fine-tuned GR00T N1.7 VLA (38/60) were worse. The round-2 recovery model
-(100k) is the default evaluated policy.
+a fine-tuned GR00T N1.7 VLA (38/60) were worse. The recovery model (100k)
+is the default evaluated policy.
 \end{abstract}
 
 %------------------------------------------------------------------------------
@@ -168,7 +167,7 @@ split equally across the six source slots. To avoid tuning on the public seeds, 
 checkpoints and execution modes on a private validation block starting at
 seed 6{,}000{,}000. We ran the public block (7{,}310{,}000+) with only two configurations:
 the baseline (200k), once with 30 and once with 60 episodes, and the
-finally selected round-2 recovery model, once with 60 episodes after it had
+finally selected recovery model, once with 60 episodes after it had
 been selected on validation. All three runs are reported. The evaluator draws a slot-balanced
 plan from the starting seed, so a 60-episode validation run uses seeds
 between 6{,}000{,}000 and 6{,}000{,}070 (a 30-episode run, 6{,}000{,}000--6{,}000{,}049);
@@ -182,7 +181,7 @@ evaluator because files covered by the submission digest changed while they
 ran (other tools were being developed and training runs started in the same
 checkout): the baseline at 100k in Table~\ref{tab:recovery}, the
 $k=-0.01$, $-0.05$ and $-0.1$ runs in Table~\ref{tab:ksweep}, and the
-three round-1 recovery-collection screening runs. The runs in
+three first-round recovery-collection screening runs. The runs in
 Table~\ref{tab:results} and the selected policy's run are qualifying.
 
 \begin{table}[h]
@@ -382,32 +381,38 @@ suggestive.
 \subsection{Attempt 1: human recovery data (HG-DAgger style)}
 \label{sec:recovery}
 
-\paragraph{Collection.} We ran the 200k baseline (ensemble) on 126
-episodes from a separate collection block (seeds 5{,}500{,}000--5{,}999{,}999;
-disjoint from the demonstrations, the validation block and the public
-block); 24 failed. When an episode timed out, an operator took over
-and finished the placement (\texttt{submission/tools/collect\_recovery.py}).
-The operator controlled the left-hand pose and the gripper from a mouse and
-keyboard panel, plus sidesteps of the base. A damped least-squares IK
-solver (\texttt{submission/tools/arm\_ik.py}) converted the hand target into
-the 7 left-arm joint targets of the action vector. The IK reads privileged
+\paragraph{Collection.} {\sloppy We ran the policy on episodes from a separate
+collection block (seeds 5{,}500{,}000--5{,}999{,}999; disjoint from the
+demonstrations, the validation block and the public block). When an episode
+timed out, an operator took over and finished the placement
+(\texttt{submission/tools/collect\_recovery.py}). The operator controlled the
+left-hand pose and the gripper from a mouse and keyboard panel, plus
+sidesteps of the base. A damped least-squares IK solver
+(\texttt{submission/tools/arm\_ik.py}) converted the hand target into the 7
+left-arm joint targets of the action vector. The IK reads privileged
 simulator state; it is used only in this disclosed data-collection workflow
 and never by the evaluated policy. Only frames after the takeover were
-recorded, as (observation, executed action) pairs in the same format as
-the demonstrations, followed by a 0.5\,s hold. Failures with the plate still
-in rack~1, or tilted over $60^\circ$ and touching the table, were skipped
-(5 of 24). Of 15 saved recoveries, the 13 that met the success condition
-at save time were kept (13 seeds, 8{,}383 frames).
+recorded, as (observation, executed action) pairs in the same format as the
+demonstrations, followed by a 0.5\,s hold. Only recoveries that met the
+success condition at save time were kept.\par}
+
+Collection and training were done twice. The first round screened the 200k
+baseline on 126 episodes (24 failures) and kept 13 recoveries; a model
+trained on these scored 52/60 on validation
+(\texttt{report/\allowbreak eval\_runs/\allowbreak 20261110-2249-val-60-r1-100k}).
+The second round screened that model on 126 new episodes (20 failures) and
+kept 9 more recoveries. The final model is trained on both: 22 recoveries,
+14{,}057 frames.
 
 \paragraph{Training.} Same architecture and hyperparameters as the
 baseline, trained from scratch for 100k steps on the 60 demonstrations plus
-the 13 recoveries (46{,}028 frames; training frames are sampled uniformly,
-so about 18\% of samples come from recoveries). The baseline's 100k
-checkpoint is the matched comparison.
+the 22 recoveries (51{,}702 frames; frames are sampled uniformly, so about
+27\% of samples come from recoveries). The baseline's 100k checkpoint is the
+matched comparison.
 
-\paragraph{Chunk-length ablation.} The same demos-plus-recoveries data and
-schedule, with chunk length $K=20$ instead of 50. Temporal ensembling then
-averages up to 20 predictions per step instead of 50.
+\paragraph{Chunk-length ablation.} Demonstrations plus recovery data, with
+chunk length $K=20$ instead of 50. Temporal ensembling then averages up to
+20 predictions per step instead of 50.
 
 \begin{table}[h]
 \centering
@@ -416,8 +421,8 @@ averages up to 20 predictions per step instead of 50.
 Model (ensemble, $k=0.01$) & Success & Mean steps (successes) & Gained/lost \\
 \midrule
 Baseline, 100k & 51/60 & 627 & -- \\
-Demos + recoveries, 50k & 52/60 & 655 & +6/$-$5 \\
-Demos + recoveries, 100k & 52/60 & 640 & +7/$-$6 \\
+Demos + recoveries, 50k & 54/60 & 659 & +8/$-$5 \\
+Demos + recoveries, 100k (\textbf{selected}) & \textbf{54/60} & 648 & +7/$-$4 \\
 Demos + recoveries, $K=20$, 100k & 42/60 & 679 & +5/$-$14 \\
 \midrule
 Baseline, 200k (Table~\ref{tab:results}) & 48/60 & 626 & \\
@@ -425,141 +430,80 @@ Baseline, 200k (Table~\ref{tab:results}) & 48/60 & 626 & \\
 \end{tabular}
 \caption{Recovery-data and chunk-length runs on the same 60-episode
 validation plan. The baseline 100k run is flagged non-qualifying (files
-changed during the run; see Section~\ref{sec:protocol}). Gained/lost is relative to the
-baseline at 100k. Against the 200k baseline,
-the recovery model at 100k is +9/$-$5 and $K=20$ is +5/$-$11. All runs are reported. Every failure is a timeout.}
+changed during the run; see Section~\ref{sec:protocol}); the recovery runs
+at 50k and 100k are qualifying with status PASS. Gained/lost is relative to
+the baseline at 100k. All runs are reported. Every failure is a timeout.}
 \label{tab:recovery}
 \end{table}
 
 \paragraph{Results.}
 \begin{itemize}
-  \item \textbf{No measurable gain from the recoveries.} At matched
-        training length the recovery model scores 52/60 against 51/60, with
-        7 seeds gained and 6 lost. Given the run-to-run variation
-        in Section~\ref{sec:ksweep}, the two cannot be distinguished.
-        Successful episodes are slightly slower (640 vs.\ 627 steps).
+  \item \textbf{Exactly at the criterion on validation.} The recovery model
+        scores 54/60 at both 50k and 100k, the minimum passing count, against
+        51/60 for the baseline at the same length (7 seeds gained, 4 lost; a
+        paired sign test on these 11 seeds gives $p\approx0.55$). The 50k and
+        100k checkpoints fail on different seeds. Successful episodes are
+        slightly slower (648 vs.\ 627 steps).
+  \item \textbf{Not confirmed on held-out seeds.} More than a dozen
+        configurations were compared on the same 60 validation seeds, so the
+        validation score is optimistic. On the public block the recovery
+        model scored 52/60 (Section~\ref{sec:selected}).
   \item \textbf{$K=20$ is worse:} 42/60, 14 seeds lost and 5 gained against
         the 100k baseline, with slower successes (679 steps),
         although its final training L1 was slightly lower (0.0199 vs.\
         0.0207 for $K=50$ on the same data). One training seed only.
-  \item \textbf{Round-2 screening.} The recovery model (100k) succeeded on
-        106/126 fresh collection seeds (5{,}800{,}000+, 5{,}850{,}000+,
-        5{,}900{,}000+). Of the 20 failures, 2 left the plate in rack~1, 6
-        ended tilted over $60^\circ$ on the table, and 12 ended near or against
-        rack~2 (just outside the 5\,cm or $20^\circ$ limits, still held, or held
-        against the table). These are different seeds from the round-1
-        screen (24/126 failures), so the two failure counts are not a
-        paired comparison.
 \end{itemize}
 
-\paragraph{Why the recoveries did not raise the success rate.} We replayed
-every validation failure of the baseline (100k) and of the recovery model
-(100k) from its seed, as in Section~\ref{sec:failures}, and counted grasps
-in the logged gripper commands (a grasp is a closed period of at least
-30 steps).
+\paragraph{Failure analysis of the selected model.} We replayed all 14
+failures of the selected model (6 on validation, 8 on the public block)
+from their seeds, as in Section~\ref{sec:failures}, evaluated the success
+conditions on the final state, and read the logged gripper commands (a
+grasp is a closed period of at least 30 steps).
 
 \begin{table}[h]
 \centering
-\begin{tabular}{p{7.2cm}cc}
+\begin{tabular}{p{6.4cm}cp{6.2cm}}
 \toprule
-Final state of failed episodes & Baseline 100k & + recoveries 100k \\
+Final state & Count & Seeds \\
 \midrule
-Grasp missed (plate still in rack~1) & 1 & 0 \\
-In rack~2, tilted $>20^\circ$ & 4 & 1 \\
-In rack~2, 5.5--5.9\,cm from the slot & 2 & 2 \\
-In rack~2 within the distance and tilt limits, finger still touching & 0 & 2 \\
-Dropped or short, touching the table & 2 & 3 \\
-\midrule
-Total failures & 9 & 8 \\
-Failures ending with a finger pad on the plate & 4 & 5 \\
-Episodes with a second grasp (of 60): succeeded / failed & 0 / 0 & 1 / 5 \\
+Never opens the gripper (one grasp, holds to the time limit) & 5 &
+  6000024, 6000044, 7310008, 7310016, 7310035 \\
+Re-grasps and ends holding the plate (2--3 grasps) & 4 &
+  6000022, 7310026, 7310047, 7310052 \\
+Releases late (step 1078 or 1673) & 2 & 6000014, 6000046 \\
+Releases on time, 5.4--5.9\,cm from the slot & 2 & 6000041, 7310023 \\
+Dropped flat on the table & 1 & 7310033 \\
 \bottomrule
 \end{tabular}
-\caption{Validation failures (60-episode plan from seed 6{,}000{,}000) by final
-state, from replays of the logged actions.}
+\caption{Failures of the selected model (validation and public, 14 in
+total) by final state, from replays of the logged actions. Every failure is
+a timeout.}
 \label{tab:recovery-failures}
 \end{table}
 
 \begin{itemize}
-  \item \textbf{The recoveries fixed the failures they demonstrate.} The
-        recovery model solves 7 seeds the baseline failed: the missed grasp
-        (6000011), all four tilted placements (6000020, 6000037, 6000054,
-        6000066) and both placements just outside 5\,cm (6000022, and
-        6000044 after releasing, re-grasping and re-placing the plate). Of
-        the 13 recoveries, 9 start with the gripper open, i.e.\ the operator
-        took over after the policy had released the plate, and 2 contain a
-        second grasp.
-  \item \textbf{The learned re-grasp is unreliable and fires on seeds the
-        baseline solved.} The baseline never grasps twice. The recovery
-        model grasps a second time in 6 episodes and succeeds in 1. In
-        6000038 and 6000012 the second grasp knocks the plate onto the table;
-        in 6000041 and 6000069 the policy alternates between grasping and
-        releasing (4 and 5 grasps) until the time limit. Four of the six
-        seeds it newly fails (6000017, 6000038, 6000041, 6000069) contain a
-        second grasp.
-  \item \textbf{Releasing cleanly is still the main problem.} Five of the 8
-        failures end with a finger pad touching the plate, which BiGym counts
-        as holding it. In two of them (6000024, 6000041) the plate is
-        otherwise inside every limit; in two more it is 5.6--5.9\,cm from the
-        slot.
-  \item \textbf{Net effect.} Seven seeds gained and six lost give 52/60
-        against 51/60. The recoveries changed \emph{which} seeds fail rather
-        than how many. Two seeds fail with both models (6000012, 6000060).
+  \item \textbf{The main failure is now releasing the plate, not placing
+        it.} In 11 of 14 failures the gripper does not open in time: it never
+        opens (5), it opens and closes again (4), or it opens late (2). The
+        baseline's failures were mostly placement errors after a normal
+        release (Table~\ref{tab:failures}).
+  \item \textbf{Several of these placements were otherwise good.} In
+        7310008 and 7310035 the plate is in rack~2 within the distance and
+        tilt limits and the only violated condition is that it is still held.
+        In 6000014 every condition holds at the end, but the gripper opened
+        at step 1673, too late to hold success for one second before the
+        1700-step limit.
+  \item \textbf{Re-grasping is still unreliable.} The model grasps a second
+        time in 7 of 120 episodes and succeeds in 3 (6000012, 7310013,
+        7310045). In 7310047 and 7310052 the second grasp lifts the plate
+        back out of rack~2 (13--14\,cm above the slot).
 \end{itemize}
 
-Possible explanations, not tested: 13 recoveries (about 18\% of training
-samples) teach that re-grasping exists but not reliably when to stop; the
-policy has no memory of earlier grasps, so a closed-loop re-grasp can repeat
-indefinitely; and nothing in training rewards breaking finger contact after
-release, which the success check requires.
-
-\paragraph{Round 2.} The first explanation suggests more recovery data, on
-the failures of the current model. The operator recovered failures of the
-round-1 model (100k) from the round-2 screen above with the same tool: 13
-saved recoveries on 12 seeds, of which the 9 that met the success condition
-at save time were kept (9 seeds, 5{,}674 frames). The model was retrained
-from scratch for 100k steps with the same settings on the 60 demonstrations
-plus all 22 recoveries (51{,}702 frames, about 27\% from recoveries;
-\texttt{submission/act/run\_recovery\_round2.sh}).
-
-\begin{table}[h]
-\centering
-\begin{tabular}{lcccc}
-\toprule
-Model (ensemble, $k=0.01$) & Success & Mean steps & vs.\ base 100k & vs.\ round 1 \\
-\midrule
-Round 1 (13 recoveries), 100k & 52/60 & 640 & +7/$-$6 & -- \\
-Round 2 (22 recoveries), 50k & 54/60 & 659 & +8/$-$5 & +4/$-$2 \\
-Round 2 (22 recoveries), 100k & \textbf{54/60} & 648 & +7/$-$4 & +6/$-$4 \\
-\bottomrule
-\end{tabular}
-\caption{Round-2 recovery model on the same 60-episode validation plan. Both
-runs are qualifying with status PASS (54/60 is exactly the required count).
-Mean steps are over successful episodes. All failures are timeouts.}
-\label{tab:recovery2}
-\end{table}
-
-\begin{itemize}
-  \item \textbf{Exactly at the criterion, and not a significant gain.} 54/60
-        is the minimum passing count. Against round 1 the 100k model gains
-        6 seeds and loses 4; a paired sign test on these 10 seeds gives
-        $p\approx0.75$, and the run-to-run variation of
-        Section~\ref{sec:ksweep} is of the same size. The 50k and 100k
-        checkpoints both reach 54/60, with different failing seeds.
-  \item \textbf{Selection bias.} More than a dozen configurations (checkpoints, ensemble weights, data variants) were compared on
-        the same 60 validation seeds, so its validation score is optimistic.
-        The held-out public-block run (Section~\ref{sec:selected}) scored
-        52/60.
-  \item \textbf{Remaining failures (100k).} 6000014, 6000022, 6000024,
-        6000041, 6000044, 6000046. Two (6000024, 6000041) fail with every
-        model trained with recoveries (both rounds, 50k and 100k, and
-        $K=20$) but were solved by the baseline at 100k. In round 1 they ended inside the distance and
-        tilt limits with a finger still touching the plate; with the round-2
-        model the plate is still held at the time limit (above rack~2 in
-        6000024, inside it in 6000041). In 6000022 the
-        policy grasps three times without finishing; in 6000012 it re-grasps
-        once and succeeds (video below).
-\end{itemize}
+Possible explanations, not tested: in the recovery data the gripper is
+closed for a larger share of frames than in the demonstrations (69\% vs.\
+55\%), which may bias the policy towards holding; the policy has no memory of earlier grasps, so a re-grasp can
+repeat; and nothing in training marks the moment at which releasing is
+correct.
 
 \subsection{Attempt 2: shifted-placement demonstrations}
 \label{sec:shift}
@@ -626,8 +570,8 @@ wrapper. The robot is registered as a new embodiment, and the policy runs
 in GR00T's own Python environment behind the unmodified evaluator.
 The policy uses only \texttt{obs["rgb"]} and \texttt{obs["state"]}.
 
-\paragraph{Training.} Data: the 60 demonstrations plus the 13 round-1
-recoveries (the same data as Attempt~1). 20{,}000 steps, global batch 32,
+\paragraph{Training.} Data: the 60 demonstrations plus recovery data
+(Attempt~1). 20{,}000 steps, global batch 32,
 GR00T's default learning-rate schedule, on one rented A100-SXM4-80GB
 (vast.ai): 1.33 steps/s (about 4.2\,h), 41.5\,GB GPU memory.
 Checkpoints were saved without optimizer state (about 12\,GB each instead of
@@ -646,13 +590,11 @@ re-planning (no temporal ensembling).
 Model & Success & Mean steps & Timeout/term. & Gained/lost \\
 \midrule
 ACT baseline, 100k & 51/60 & 627 & 9 / 0 & -- \\
-ACT demos + recoveries, 100k & 52/60 & 640 & 8 / 0 & +7/$-$6 \\
 GR00T N1.7, 10k steps & 13/60 & 804 & 35 / 12 & +2/$-$40 \\
 GR00T N1.7, 20k steps & 38/60 & 695 & 21 / 1 & +7/$-$20 \\
 \bottomrule
 \end{tabular}
-\caption{GR00T N1.7 fine-tuned on the demonstrations plus round-1
-recoveries (the data of the ACT recovery model). Gained/lost is relative to
+\caption{GR00T N1.7 fine-tuned on the demonstrations plus recovery data. Gained/lost is relative to
 the ACT baseline at 100k. ``Terminated'' episodes ended before the time
 limit through an environment termination other than success; no episode
 fell. The 20k model succeeds on 26 seeds where the 10k model failed and
@@ -678,25 +620,24 @@ Configuration & Validation & Gained/lost vs.\ base 100k \\
 \midrule
 ACT baseline, 100k & 51/60 & -- \\
 ACT baseline, 200k & 48/60 & +5/$-$8 \\
-ACT + round-1 recoveries, 100k & 52/60 & +7/$-$6 \\
-ACT + round-2 recoveries (22), 50k & 54/60 & +8/$-$5 \\
-ACT + round-2 recoveries (22), 100k (\textbf{selected}) & \textbf{54/60} & +7/$-$4 \\
-ACT + round-1 recoveries, $K=20$ & 42/60 & +5/$-$14 \\
+ACT + recoveries, 50k & 54/60 & +8/$-$5 \\
+ACT + recoveries, 100k (\textbf{selected}) & \textbf{54/60} & +7/$-$4 \\
+ACT + recoveries, $K=20$ & 42/60 & +5/$-$14 \\
 ACT, shifted demonstrations only, 100k & 38/60 & +6/$-$19 \\
 GR00T N1.7, 20k & 38/60 & +7/$-$20 \\
 \bottomrule
 \end{tabular}
 \caption{All improvement attempts on the same 60 validation seeds
-(Tables~\ref{tab:recovery}, \ref{tab:recovery2}, \ref{tab:shift} and \ref{tab:groot}).}
+(Tables~\ref{tab:recovery}, \ref{tab:shift} and \ref{tab:groot}).}
 \label{tab:summary}
 \end{table}
 
 The hypothesis behind Attempt~1 was that every failure is a stall
 (Section~\ref{sec:failures}) because the demonstrations contain no
 corrective behaviour, so on-policy recovery data should teach the policy to
-continue after a bad grasp or placement. The round-2 recovery model (100k)
+continue after a bad grasp or placement. The recovery model (100k)
 is the best configuration on validation and is the default policy
-{\sloppy(\texttt{submission/policy.py}). Of the two round-2 checkpoints that
+{\sloppy(\texttt{submission/policy.py}). Of the two checkpoints that
 scored 54/60 we chose 100k because its weakest source slot is 8/10 (50k: 7/10).
 Its validation run
 (\texttt{report/\allowbreak eval\_runs/\allowbreak 20261112-0753-val-60-r2-100k}) is complete,
@@ -715,18 +656,18 @@ It scored \textbf{52/60 (86.7\%)}, status \textbf{FAIL} (complete,
 slot-balanced, integrity-valid), per source slot 10/10, 7/10, 8/10, 8/10,
 9/10 and 10/10; all 8 failures are timeouts. The validation pass therefore
 did not hold on unseen seeds. On the same public seeds the 200k baseline
-scored 49/60; the round-2 model gains 7 and loses 4. Pooled over the two
+scored 49/60; the recovery model gains 7 and loses 4. Pooled over the two
 disjoint 60-episode blocks the selected model scores 106/120 (88.3\%),
 against 97/120 (80.8\%) for the baseline. \textbf{We do not claim the 90\%
 criterion is met.}\par}
 
 \paragraph{Videos.} \texttt{report/videos/} contains seven validation
-episodes of the selected policy (round 2, 100k), rendered from a third-person camera with the
+episodes of the selected policy, rendered from a third-person camera with the
 policy's three cameras below: successes from source slots 4, 2 and 6 (seeds
-6000001--6000003), the two seeds that fail with every recovery-trained model (6000024: the
-plate is still held above rack~2 at the time limit; 6000041: the plate is in
-rack~2 but never released), a failure with repeated grasps that ends holding
-the plate tilted (6000022), and a re-grasp recovery that succeeds (6000012). They are replays of the actions logged by the
+6000001--6000003), a failure where the gripper never opens and the plate is
+still held above rack~2 at the time limit (6000024), a release 5.9\,cm from
+the slot (6000041), a failure with repeated grasps that ends holding the
+plate tilted (6000022), and a re-grasp recovery that succeeds (6000012). They are replays of the actions logged by the
 evaluator, re-rendered by \texttt{submission/tools/render\_episodes.py}; each
 replay reproduced the evaluated outcome.
 
@@ -748,9 +689,11 @@ informative ablation.
 evaluations are small samples (the 30-episode public run scored 90\% but the 60-episode run 81.7\%); and success has not been tested
 beyond the simulator's $\pm5$\,cm rack variation.
 
-\paragraph{Next steps.} Further recovery rounds on failures of the latest
-model, since round 2 moved validation from 52/60 to 54/60, with recoveries that
-show breaking finger contact after release; mixing original and shifted demonstrations rather than replacing
+\paragraph{Next steps.} Fix the release: 11 of the selected model's 14
+failures are a gripper that does not open in time, so recoveries that
+demonstrate a clean release, or a simple observation-based release rule once
+the plate rests in rack~2, are the most direct next step; further recovery
+rounds on failures of the latest model; mixing original and shifted demonstrations rather than replacing
 one with the other; longer GR00T fine-tuning, since its success rose from
 13/60 at 10k steps to 38/60 at 20k with the training loss still falling;
 stall detection with a retry behaviour, since every ACT failure is a
@@ -764,7 +707,7 @@ more reliable.
 
 {\sloppy The default policy \texttt{submission.policy:make\_policy} is the selected
 configuration (Section~\ref{sec:selected}): ACT trained on the
-demonstrations plus all 22 recoveries (rounds 1 and 2), 100k steps, temporal ensembling with
+demonstrations plus 22 recoveries, 100k steps, temporal ensembling with
 $k=0.01$. Its checkpoint is stored in the repository with Git LFS at
 \texttt{submission/\allowbreak act/\allowbreak weights/\allowbreak act-recovery-r2-100k.pt} (113\,MB, SHA-256
 \texttt{1752981f7307abfc\allowbreak d7465f63d2dfbec2\allowbreak efd6fee36ff39b0f\allowbreak 8cdc7e895b19143e});
@@ -815,9 +758,9 @@ For the recovery runs (Section~\ref{sec:recovery}),
 \texttt{submission/act/screen\_failures.sh} finds failing collection seeds,
 \texttt{uv run python -m submission.tools.collect\_recovery --failed-in results/<screen-dirs>}
 records recoveries,
-\texttt{submission/act/run\_recovery\_round1.sh} packs them
+\texttt{submission/act/run\_recovery\_round1.sh} packs the first round
 (\texttt{submission.act.pack\_recoveries --successful-only}), trains and
-evaluates them, \texttt{submission/act/run\_recovery\_round2.sh} does the
+evaluates, \texttt{submission/act/run\_recovery\_round2.sh} does the
 same with all 22 recoveries (the selected model), and \texttt{submission/act/run\_chunk20.sh} runs the $K=20$
 ablation.
 The shifted demonstrations (Section~\ref{sec:shift}) come from
