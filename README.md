@@ -1,4 +1,4 @@
-# Advaitic · Robot Learning Assignment
+# Robot Learning Assignment
 
 Transfer one plate between two racks using a Unitree G1 in MuJoCo. Build a repeatable, observation-driven system, evaluate it honestly, and explain how you improved it.
 
